@@ -21,6 +21,7 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   `lastViewedDocumentId` 读不到；当前白板标题取 Allume 窗口的 AX 标题。
 - CLI 自己是沙盒 app，直接 `Process` 启动时读不到 `isCLIReadOnly` → 一律只读（exit 7）；必须经 `open -W` 启动。
 - `allume search` 不接受空 query；`allume card-content <白板id>` 报 "No card"。
+- `board-content` / `card-content` 的 `createdAt` 是调用时间，不是创建时间；创建先后用卡片 id 后半段的字典序（单调递增）。
 - Allume 的 AX 树里卡片标题是 AXTextField 的 value（subBoard 也有），但没有选中状态，选中仍靠 ⌘C + 剪贴板。
 - CLI 做的移动在 Allume 里 ⌘Z 撤不掉（不经过它的 undo manager），只能 `card-move` 恢复；面板的"撤销"就是这么做的。
   面板不提供删除：Allume 自己的 Delete 键带原生 ⌘Z。

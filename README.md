@@ -118,7 +118,7 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 | （不写）、`顺序`、`asc` | 阅读顺序：先 y 后 x，卡片保持原来的视觉顺序 |
 | `逆序`、`倒序`、`reverse`、`desc` | 上述顺序反过来 |
 | `按标题`、`标题`、`名字`、`title`、`by name` | 按标题排（`localizedStandardCompare`，跟随系统语言的排序规则；中文系统下汉字标题排在拉丁字母前，数字按数值） |
-| `按时间`、`时间`、`date`、`created` | 按创建时间从旧到新（`board-content` 的 `createdAt`） |
+| `按时间`、`时间`、`date`、`created` | 按创建先后从旧到新。`board-content` 的 `createdAt` 实测等于调用时间，不能用；卡片 id 冒号后的部分带单调递增的时间前缀（HLC 风格），按它排 |
 
 例：`一行逆序`、`排成4列倒序`、`按标题一列`、`grid 2 by title`、`按时间逆序`。
 修饰词会从中文连写里剥出来（"列倒序" → 列 + 倒序），剩下的词再去匹配命令。

@@ -226,6 +226,10 @@ final class CommandRunner {
         }
     }
 
+    private static func idSuffix(_ id: String) -> String {
+        id.split(separator: ":").last.map(String.init) ?? id
+    }
+
     private static func num(_ v: Double) -> String {
         v == v.rounded() && abs(v) < 1e15 ? String(Int(v)) : String(v)
     }
@@ -283,7 +287,9 @@ final class CommandRunner {
                         let ta = lastRows[a.0]?.title ?? "", tb = lastRows[b.0]?.title ?? ""
                         return ta.localizedStandardCompare(tb) == .orderedAscending
                     case .created:
-                        return (lastRows[a.0]?.createdAt ?? "") < (lastRows[b.0]?.createdAt ?? "")
+                        // board-content's createdAt is the call time, useless for ordering. Card ids
+                        // carry a monotonic (HLC-style) prefix, so the id suffix is creation order.
+                        return Self.idSuffix(a.0) < Self.idSuffix(b.0)
                     }
                 }.map(\.0)
                 if order.reversed { ordered.reverse() }

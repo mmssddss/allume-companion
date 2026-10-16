@@ -14,7 +14,7 @@ struct BoardCard: Decodable {
     let id: String
     let kind: String?
     let title: String?
-    let createdAt: String?      // ISO-8601 with Z, so string order is time order
+    let createdAt: String?      // Beware: equals the time of the board-content call, not creation
     let frame: Frame
     let parentDocumentId: String?
     let document: Document?
