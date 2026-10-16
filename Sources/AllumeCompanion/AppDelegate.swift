@@ -181,6 +181,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             Task { @MainActor in
                 let query = env["ALLUME_USR2"] ?? "排成 3 列"
+                if query == "test-notification" { self.reminders.sendTest(); return }
                 if let match = CommandCatalog.matches(for: query).first {
                     Log.info("test: \"\(query)\" → \(match.title)")
                     await self.runner.run(match.kind)
@@ -307,6 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "最近去过…", action: #selector(menuRecent), keyEquivalent: "")
         menu.addItem(withTitle: "全部待办…", action: #selector(menuTodos), keyEquivalent: "")
         menu.addItem(withTitle: "重新扫描待办", action: #selector(menuRescan), keyEquivalent: "")
+        menu.addItem(withTitle: "发一条测试通知", action: #selector(menuTestNotification), keyEquivalent: "")
         menu.addItem(withTitle: "打开辅助功能设置…", action: #selector(openAXSettings), keyEquivalent: "")
         menu.addItem(withTitle: "打开通知设置…（到期提醒）", action: #selector(openNotificationSettings), keyEquivalent: "")
         menu.addItem(.separator())
@@ -318,6 +320,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuRecent() { state.panelMode = .recentBoards; readSelectionAndShow() }
     @objc private func menuTodos() { state.panelMode = .allTodos; readSelectionAndShow() }
     @objc private func menuRescan() { todoIndex.refresh(index: boardIndex, reason: "menu") }
+    @objc private func menuTestNotification() { reminders.sendTest() }
 
     @objc private func openNotificationSettings() { DueReminders.openSettings() }
 

@@ -34,11 +34,12 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
         center.getNotificationSettings { [weak self] settings in
             Task { @MainActor in
                 guard let self else { return }
-                Log.info("reminders: authorization status \(settings.authorizationStatus.rawValue) (0 = not asked yet, 1 = denied, 2 = allowed)")
-                if settings.authorizationStatus == .denied {
+                Log.info("reminders: authorization status \(settings.authorizationStatus.rawValue) (0 = not asked yet, 1 = denied, 2 = allowed); alert \(settings.alertSetting.rawValue), banner-in-center \(settings.notificationCenterSetting.rawValue), sound \(settings.soundSetting.rawValue)")
+                if settings.authorizationStatus == .denied, settings.alertSetting != .enabled {
                     Log.info("reminders: notifications are off for this app; turn them on in 系统设置 → 通知 → Allume Companion (menu: 打开通知设置…)")
                 }
-                if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional {
+                if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+                    || settings.alertSetting == .enabled {
                     self.authorized = true
                     self.onAuthorized?()
                     return
@@ -64,7 +65,11 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
         let center = UNUserNotificationCenter.current()
         // Asked live, so flipping the switch in 系统设置 takes effect at the next scan, no relaunch.
         center.getNotificationSettings { [weak self] settings in
+            // Seen on macOS 26/27: after the user turns the app on in 系统设置 (rather than in the
+            // first prompt), authorizationStatus still says denied while the alert/sound settings
+            // say enabled and `add` succeeds. Trust the per-setting flags too.
             let ok = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
+                || settings.alertSetting == .enabled
             Task { @MainActor in
                 guard let self else { return }
                 self.authorized = ok
@@ -108,6 +113,19 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
         if fired + queued > 0 {
             save()
             Log.info("reminders: \(fired) due now, \(queued) scheduled (\(dated.count) dated todos)")
+        }
+    }
+
+    /// Menu "发一条测试通知": delivers one now and logs what the system says, so a permission
+    /// problem shows up as the system's own error text instead of silence.
+    func sendTest() {
+        guard Self.available else { Log.info("reminders: test skipped, not in an .app bundle"); return }
+        let content = UNMutableNotificationContent()
+        content.title = "Allume Companion 测试通知"
+        content.body = "能看到这条，到期提醒就能响。"
+        content.sound = .default
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "test-\(Date().timeIntervalSince1970)", content: content, trigger: nil)) { err in
+            Log.info("reminders: test notification \(err.map { "failed: \($0.localizedDescription)" } ?? "handed to the system")")
         }
     }
 
