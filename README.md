@@ -17,6 +17,8 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 - 签名：优先用钥匙串里的 Developer ID Application 证书，其次 Apple Development（可用 `CODESIGN_IDENTITY` 指定），
   找不到就 ad-hoc。辅助功能授权绑定签名证书：**换证书或 ad-hoc 重签都会让 macOS 丢掉授权**，要在系统设置里重新勾选；
   日常构建和 release.sh 都用 Developer ID 就不会反复要。
+  已经授权过再换证书时，设置里重新勾选可能不生效（旧记录绑的是旧签名）：`tccutil reset Accessibility com.maverickli.allume-companion`
+  清掉旧记录，重启 app 让它重新弹系统提示。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
 - 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘K（预设选中时也会重新从模型/CLI 补标题并打印 ⌘K 统计）；`kill -USR2 ...` 等于点"排成 N 列"
   （`ALLUME_USR2="小"` 这类值会像在输入框里打字一样经过命令匹配）；`kill -INFO ...` 等于点"撤销"；
