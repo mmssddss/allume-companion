@@ -10,6 +10,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKey: HotKey?
     private var runner: CommandRunner!
     private var overlay: OverlayController!
+    private var boardIndex: BoardIndex!
+    private var boardModel: BoardModel!
     private var trustTimer: Timer?
     private var usr1Source: DispatchSourceSignal?
     private var usr2Source: DispatchSourceSignal?
@@ -18,16 +20,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         runner = CommandRunner(state: state)
         overlay = OverlayController(state: state, runner: runner)
+        // Current-board model: the index maps the window title to a board id (cached in
+        // boards.json, recrawled in the background), the model holds that board's cards.
+        boardIndex = BoardIndex()
+        boardModel = BoardModel(index: boardIndex, thumbnails: runner.thumbnails)
+        boardModel.onLoaded = { [weak self] in self?.runner.refreshSelectionFromModel() }
+        runner.boardModel = boardModel
+        boardIndex.refresh(reason: "launch")
         setupStatusItem()
         requestAccessibility()
 
         tracker.onChange = { [weak self] info in
             Task { @MainActor in
+                guard let self else { return }
                 Log.info("allume window: \(info.map { "\($0.frame) active=\($0.isActive) title=\($0.title)" } ?? "none")")
-                self?.state.allumeRunning = info != nil
-                self?.state.boardTitle = info?.title ?? ""
-                self?.updateHotKey(allumeActive: info?.isActive ?? false)
-                self?.overlay.update(window: info)
+                self.state.allumeRunning = info != nil
+                self.state.boardTitle = info?.title ?? ""
+                self.boardModel.allumeActive = info?.isActive ?? false
+                if let title = info?.title { self.boardModel.setTitle(title) }
+                self.updateHotKey(allumeActive: info?.isActive ?? false)
+                self.overlay.update(window: info)
             }
         }
         tracker.start()
@@ -52,13 +64,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if presetSelection {
                 if self.overlay.isPanelVisible { self.overlay.hidePanel() } else {
+                    var stats = HotKeyStats()
                     self.tracker.refresh()
                     self.overlay.update(window: self.tracker.currentWindow())
                     self.overlay.showPanel()
+                    stats.panelShown()
                     // `ALLUME_SNAPSHOT=/path.png` also writes a rendering of the panel there
                     // (screencapture needs Screen Recording; this does not).
                     if let path = env["ALLUME_SNAPSHOT"], !path.isEmpty {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.overlay.snapshot(to: path) }
+                    }
+                    // Re-describe the preset selection too, so the ⌘K statistics are measurable
+                    // with the hook (the ids themselves are kept; Allume is not asked).
+                    Task { @MainActor in
+                        Task { await self.boardModel.refresh(reason: "panel opened") }
+                        await self.runner.describeSelection()
+                        stats.described(self.state.selectedCards)
                     }
                 }
             } else {
@@ -69,6 +90,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Test hook: `ALLUME_SELECT_IDS=a,b,c` pre-fills the selection without going through ⌘C.
         if let ids = env["ALLUME_SELECT_IDS"], !ids.isEmpty {
             state.selectedCardIds = ids.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+            state.selectionFromAllume = false
             state.appendLog("测试：预设选中 \(state.selectedCardIds.count) 张 " + state.selectedCardIds.joined(separator: ", "))
             Task { @MainActor in await runner.describeSelection() }
         }
@@ -141,9 +163,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func readSelectionAndShow() {
         Task { @MainActor in
+            var stats = HotKeyStats()
             do {
                 let cards = try await SelectionReader.capture(pid: tracker.pid)
                 state.selectedCardIds = cards.map(\.id)
+                state.selectionFromAllume = true
                 state.selectionMessage = cards.isEmpty ? "⌘C 后剪贴板里没有 Allume 卡片" : ""
                 Log.info("selection: \(cards.count) cards: \(cards.map(\.id))")
                 state.appendLog("读取选中：\(cards.count) 张 " + cards.map(\.id).joined(separator: ", "))
@@ -156,7 +180,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tracker.refresh()
             overlay.update(window: tracker.currentWindow())
             overlay.showPanel()
+            stats.panelShown()
+            // The panel is one of the model's refresh points; it runs alongside describing
+            // the selection (which uses the model as it is now) and re-describes once done.
+            Task { await boardModel.refresh(reason: "panel opened") }
             await runner.describeSelection()
+            stats.described(state.selectedCards)
+        }
+    }
+
+    // MARK: - ⌘K statistics
+
+    /// Counts CLI calls and time from ⌘K to the panel showing and to the card stack being
+    /// described, and logs one line; the number to watch is "前台" on the second part.
+    private struct HotKeyStats {
+        let t0 = Date()
+        let c0 = AllumeCLI.counts
+        var shownMs = 0
+        var shownCalls = AllumeCLI.Counts()
+
+        mutating func panelShown() {
+            shownMs = Int(Date().timeIntervalSince(t0) * 1000)
+            shownCalls = AllumeCLI.counts - c0
+        }
+
+        func described(_ cards: [CardSummary]) {
+            let ms = Int(Date().timeIntervalSince(t0) * 1000)
+            let d = AllumeCLI.counts - c0
+            let known = cards.filter { !$0.kind.isEmpty }.count
+            Log.info("⌘K 统计：面板显示 \(shownMs) ms（CLI 前台 \(shownCalls.foreground) 次，后台 \(shownCalls.background) 次）；"
+                     + "卡片信息就绪 \(ms) ms（CLI 前台 \(d.foreground) 次，后台 \(d.background) 次），\(known)/\(cards.count) 张有标题")
         }
     }
 

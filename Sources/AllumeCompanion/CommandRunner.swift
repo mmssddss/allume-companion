@@ -9,33 +9,27 @@ import Foundation
 /// it ourselves: gathering and resizing record each card's current frame via
 /// `board-content --format json` (undo = `card-move` back). Only the
 /// most recent step is kept, and undoing is itself not undoable.
+///
+/// Where card data comes from (see README "当前白板模型"): `boardModel` holds the current board's
+/// cards. Describing the selection reads from it when every selected card is there; the undo
+/// snapshot only trusts it when it was loaded within `snapshotMaxAge`, otherwise it reads the
+/// board again, because undo must restore the positions the cards really had before the write.
 @MainActor
 final class CommandRunner {
     let state: AppState
     /// Previews for the card stack, cached by card id.
     let thumbnails = ThumbnailLoader()
+    /// Set by AppDelegate once the index and model exist.
+    var boardModel: BoardModel?
+    /// How recent the board model must be for an undo snapshot to use it instead of re-reading.
+    static let snapshotMaxAge: TimeInterval = 2
+
     init(state: AppState) { self.state = state }
 
     // MARK: - Undo state
 
-    private struct Frame: Decodable, Equatable {
-        let x: Double, y: Double, width: Double, height: Double
-    }
-
-    /// One `board-content` / `card-content` row; only the fields we need.
-    private struct CardRow: Decodable {
-        struct Document: Decodable {
-            let id: String?
-            let body: String?       // text / chain cards: the inline body
-        }
-        let id: String
-        let kind: String?
-        let title: String?
-        let createdAt: String?      // ISO-8601 with Z, so string order is time order
-        let frame: Frame
-        let parentDocumentId: String?
-        let document: Document?
-    }
+    private typealias Frame = BoardCard.Frame
+    private typealias CardRow = BoardCard
 
     /// Rows cached by the last `fetchRows`, so `gather` can sort by title/createdAt without
     /// a second round of CLI calls.
@@ -82,24 +76,43 @@ final class CommandRunner {
 
     // MARK: - Frame snapshot
 
-    private func decodeRows(_ json: String) -> [CardRow] {
-        (try? JSONDecoder().decode([CardRow].self, from: Data(json.utf8))) ?? []
-    }
+    private func decodeRows(_ json: String) -> [CardRow] { BoardCard.decodeRows(json) }
 
     private func readCard(_ id: String) async -> CardRow? {
         let r = await exec(["card-content", id, "--format", "json"], showStdout: false)
         return r.ok ? decodeRows(r.stdout).first : nil
     }
 
-    /// Current frames of `ids` (see `fetchRows`).
+    /// Current frames of `ids`: from the board model when it holds all of them and was loaded
+    /// within `snapshotMaxAge`, otherwise freshly read (see `fetchRows`).
     private func snapshotFrames(_ ids: [String]) async -> [String: Frame] {
+        if let model = boardModel, let age = model.age, age <= Self.snapshotMaxAge,
+           let rows = rowsFromModel(ids) {
+            lastRows = rows
+            state.appendLog("位置来自当前白板模型（\(String(format: "%.1f", age)) 秒前读取），已记录 \(rows.count)/\(ids.count) 张（撤销用）")
+            return rows.mapValues(\.frame)
+        }
         let rows = await fetchRows(ids)
         state.appendLog("已记录 \(rows.count)/\(ids.count) 张卡片的位置和尺寸（撤销用）")
         return rows.mapValues(\.frame)
     }
 
+    /// Every one of `ids` from the board model, or nil if any is missing (another board, or a
+    /// card newer than the model).
+    private func rowsFromModel(_ ids: [String]) -> [String: CardRow]? {
+        guard let model = boardModel, model.boardId != nil, !ids.isEmpty else { return nil }
+        var out: [String: CardRow] = [:]
+        for id in ids {
+            guard let row = model.card(id) else { return nil }
+            out[id] = row
+        }
+        return out
+    }
+
     /// Current rows of `ids`, read with one `board-content` per board (plus `card-content` for
     /// the first card of a board we have not seen, and for any card the board listing misses).
+    /// The board model and index already know most scope → board id pairs, so the
+    /// `card-content` step is usually skipped.
     private func fetchRows(_ ids: [String]) async -> [String: CardRow] {
         var frames: [String: CardRow] = [:]
         let scopes = ids.reduce(into: [String]()) { acc, id in
@@ -108,9 +121,15 @@ final class CommandRunner {
         }
         for scope in scopes {
             let scopeIds = ids.filter { $0.hasPrefix(scope + ":") }
+            if boardIdByScope[scope] == nil, let known = knownBoardId(scope: scope) {
+                boardIdByScope[scope] = known
+            }
             if boardIdByScope[scope] == nil, let first = scopeIds.first, let row = await readCard(first) {
                 frames[row.id] = row
                 boardIdByScope[scope] = row.parentDocumentId
+                if let parent = row.parentDocumentId, state.selectionFromAllume {
+                    boardModel?.noteSelection(ids: ids, parentDocumentId: parent)
+                }
             }
             if let boardId = boardIdByScope[scope] {
                 let r = await exec(["board-content", boardId, "--format", "json"], showStdout: false)
@@ -128,14 +147,34 @@ final class CommandRunner {
         return frames
     }
 
+    /// Board document id for a card-id scope prefix, from the board model or the index, without
+    /// a CLI call; nil when neither knows.
+    private func knownBoardId(scope: String) -> String? {
+        if let model = boardModel, let id = model.boardId, id.hasPrefix(scope + ":") { return id }
+        return boardModel?.index.entries.first { $0.id.hasPrefix(scope + ":") }?.id
+    }
+
     /// Fills `state.selectedCards` (titles, kinds, text excerpts) for the panel's card stack,
     /// then fetches thumbnails for the cards the stack shows (the first `CardStackView.visible`),
     /// each landing in `state.selectedCards` as it arrives so the panel never waits for them.
+    ///
+    /// Source: the board model when it holds every selected card (no CLI call); otherwise
+    /// (cards on another board, or the model not loaded yet) `fetchRows` as before.
     func describeSelection() async {
         let ids = state.selectedCardIds
         state.selectedCards = ids.map { CardSummary(id: $0, title: "", kind: "", thumbnail: thumbnails.cached($0)) }
         guard !ids.isEmpty else { return }
-        let rows = await fetchRows(ids)
+        if state.selectionFromAllume { boardModel?.noteSelection(ids: ids) }
+        let rows: [String: CardRow]
+        let source: String
+        if let fromModel = rowsFromModel(ids) {
+            rows = fromModel
+            lastRows = fromModel
+            source = "board model (\(String(format: "%.1f", boardModel?.age ?? 0)) s old)"
+        } else {
+            source = boardModel?.boardId == nil ? "CLI (board model not loaded)" : "CLI (cards not in board model)"
+            rows = await fetchRows(ids)
+        }
         guard state.selectedCardIds == ids else { return } // selection changed meanwhile
         state.selectedCards = ids.map { id in
             let row = rows[id]
@@ -144,7 +183,7 @@ final class CommandRunner {
                                documentId: row?.document?.id,
                                thumbnail: thumbnails.cached(id))
         }
-        Log.info("selection described: " + state.selectedCards.map { "\($0.kind):\($0.title)" }.joined(separator: " | "))
+        Log.info("selection described from \(source): " + state.selectedCards.map { "\($0.kind):\($0.title)" }.joined(separator: " | "))
         for card in state.selectedCards.prefix(CardStackView.visible)
         where card.thumbnail == nil && ThumbnailLoader.hasThumbnail(kind: card.kind) {
             Task { @MainActor in
@@ -153,6 +192,22 @@ final class CommandRunner {
                 state.selectedCards[i].thumbnail = img
             }
         }
+    }
+
+    /// The board model reloaded: refresh titles/kinds of the selection from it if it now covers
+    /// them (no CLI call). Thumbnails already shown are kept.
+    func refreshSelectionFromModel() {
+        let ids = state.selectedCardIds
+        guard !ids.isEmpty, let rows = rowsFromModel(ids) else { return }
+        lastRows = rows
+        let updated = ids.map { id -> CardSummary in
+            let row = rows[id]!
+            return CardSummary(id: id, title: row.title ?? "", kind: row.kind ?? "",
+                               excerpt: Self.excerpt(row.document?.body),
+                               documentId: row.document?.id,
+                               thumbnail: thumbnails.cached(id))
+        }
+        if updated != state.selectedCards { state.selectedCards = updated }
     }
 
     /// First line-ish of a text body for the card face: whitespace collapsed, at most 60 characters.
@@ -190,7 +245,9 @@ final class CommandRunner {
         if !missing.isEmpty {
             state.appendLog("警告：\(missing.count) 张卡片读不到位置，撤销时不会恢复它们")
         }
-        guard await body(before) else { return }
+        let changed = await body(before)
+        if let boardModel { Task { await boardModel.refresh(reason: "after \(label)") } }
+        guard changed else { return }
         state.status = "已\(label)"
         guard !before.isEmpty else { state.appendLog("没有可撤销的记录"); return }
         undoEntry = UndoEntry(label: label,
@@ -266,5 +323,6 @@ final class CommandRunner {
         for cmd in entry.commands where !(await exec(cmd).ok) { failed += 1 }
         state.status = failed == 0 ? "已撤销：\(entry.label)" : "撤销 \(entry.label)：\(failed)/\(entry.commands.count) 条失败"
         state.appendLog(state.status)
+        if let boardModel { Task { await boardModel.refresh(reason: "after undo") } }
     }
 }

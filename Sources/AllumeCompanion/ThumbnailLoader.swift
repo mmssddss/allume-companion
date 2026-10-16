@@ -27,11 +27,12 @@ final class ThumbnailLoader {
 
     /// The thumbnail for `card`, from the cache or the CLI; nil for kinds without one or on
     /// failure. Concurrent requests for the same card share one fetch.
-    func thumbnail(for card: CardSummary) async -> NSImage? {
+    /// `background` marks the CLI calls as prewarming (see `AllumeCLI.Counts`).
+    func thumbnail(for card: CardSummary, background: Bool = false) async -> NSImage? {
         if let img = cached(card.id) { return img }
         guard Self.hasThumbnail(kind: card.kind) else { return nil }
         if let task = inFlight[card.id] { return await task.value }
-        let task = Task<NSImage?, Never> { await self.fetch(card) }
+        let task = Task<NSImage?, Never> { await self.fetch(card, background: background) }
         inFlight[card.id] = task
         let img = await task.value
         inFlight[card.id] = nil
@@ -45,25 +46,25 @@ final class ThumbnailLoader {
 
     // MARK: - Fetching
 
-    private func fetch(_ card: CardSummary) async -> NSImage? {
+    private func fetch(_ card: CardSummary, background: Bool) async -> NSImage? {
         let t0 = Date()
         var image: NSImage?
         var px = ""
         var detail = ""
         switch card.kind {
         case "image":
-            let r = await AllumeCLI.run(["card-content", card.id, "--contents", "raw", "--format", "json"], raw: true)
+            let r = await AllumeCLI.run(["card-content", card.id, "--contents", "raw", "--format", "json"], raw: true, background: background)
             (image, px) = Self.downscale(r.stdoutData, maxEdge: Self.maxEdge)
             detail = "\(r.stdoutData.count) bytes"
             if image == nil { detail += " " + Self.firstLine(r.stderr) }
         case "pdf":
-            let r = await AllumeCLI.run(["card-pdf-page", card.id, "--page", "1", "--max-dimension", "256", "--format", "json"], raw: true)
+            let r = await AllumeCLI.run(["card-pdf-page", card.id, "--page", "1", "--max-dimension", "256", "--format", "json"], raw: true, background: background)
             (image, px) = Self.downscale(r.stdoutData, maxEdge: Self.maxEdge)
             detail = "\(r.stdoutData.count) bytes"
             if image == nil { detail += " " + Self.firstLine(r.stderr) }
         case "subBoard":
             guard let doc = card.documentId else { detail = "no document id"; break }
-            let r = await AllumeCLI.run(["board-content", doc, "--format", "json"])
+            let r = await AllumeCLI.run(["board-content", doc, "--format", "json"], background: background)
             if r.ok {
                 let frames = Self.decodeFrames(r.stdout)
                 image = Self.wireframe(frames: frames, size: Self.wireframeSize)
@@ -76,10 +77,11 @@ final class ThumbnailLoader {
             return nil
         }
         let ms = Int(Date().timeIntervalSince(t0) * 1000)
+        let tag = background ? "thumbnail[bg]" : "thumbnail"
         if image != nil {
-            Log.info("thumbnail \(card.kind) \(card.id): \(px) px, \(detail), \(ms) ms")
+            Log.info("\(tag) \(card.kind) \(card.id): \(px) px, \(detail), \(ms) ms")
         } else {
-            Log.info("thumbnail \(card.kind) \(card.id): failed (\(detail)), \(ms) ms")
+            Log.info("\(tag) \(card.kind) \(card.id): failed (\(detail)), \(ms) ms")
         }
         return image
     }

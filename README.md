@@ -17,7 +17,7 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 - 签名：优先用钥匙串里的 Apple Development / Developer ID 证书（可用 `CODESIGN_IDENTITY` 指定），
   找不到就 ad-hoc。**ad-hoc 签名每次重新构建都会让 macOS 丢掉辅助功能授权**，要重新勾选。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
-- 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘K；`kill -USR2 ...` 等于点"排成 N 列"
+- 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘K（预设选中时也会重新从模型/CLI 补标题并打印 ⌘K 统计）；`kill -USR2 ...` 等于点"排成 N 列"
   （`ALLUME_USR2="小"` 这类值会像在输入框里打字一样经过命令匹配）；`kill -INFO ...` 等于点"撤销"；
   `ALLUME_SELECT_IDS=a,b,c open build/AllumeCompanion.app` 启动时直接预设选中的卡片 id，不经过 ⌘C
   （这时 `kill -USR1` 只开关面板、不重读选中；再加 `ALLUME_SNAPSHOT=/path.png` 会在面板打开时把它渲染成 PNG，
@@ -51,7 +51,7 @@ Allume 主窗口的 Accessibility 标题（`kAXTitleAttribute`）就是当前白
   在终端里能读，是因为终端的 responsible process（Claude / Terminal）被授予了完全磁盘访问之类的权限。
 - 没有 CLI 命令能用白板 id 直接查标题（`card-content <白板id>` 报 "No card"，`search` 不接受空 query）；
   能做的是从 `list-workspaces` 的 `rootBoardId` 用 `board-content --kinds subBoard` BFS 爬全部子白板
-  （79 个白板约 2.4 秒）。现在不需要了。
+  （79 个白板约 2.4 秒）。现在就是这么做的，见下面"当前白板模型"。
 
 ### CLI 为什么要用 `open` 启动
 
@@ -128,6 +128,49 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 面板是 `NSPanel(.nonactivatingPanel)`，能接键盘但不会把本 app 激活，Allume 保持前台。不提供删除：
 Allume 自己的 Delete 键就是删除，而且带原生 ⌘Z。
 
+### 当前白板模型：什么时候查 CLI、什么时候用缓存
+
+Allume 没有任何变更通知，容器也读不到，所以伴生 app 自己在内存里维护一份"当前白板"的副本，⌘K 时基本不查 CLI。
+两层：
+
+**BoardIndex（标题 → 白板文档 id）**。窗口标题只给名字，`board-content` 要的是完整文档 id，这张表把两者连起来。
+启动时先读缓存 `~/Library/Application Support/AllumeCompanion/boards.json`，然后在后台重新爬一遍：
+`list-workspaces` 拿每个 workspace 的 `rootBoardId`（标题记为 workspace 名），再对每块白板
+`board-content <id> --kinds subBoard --format json` BFS（`document.id` 是子白板的文档 id，4 个并发，79 块白板约 8 秒，
+`open -W` 偶发 "Unable to block on applications" 时重试一次）。同名白板全部保留，按 `lastSeen` 排序：
+选中卡片的 scope 前缀（等于白板文档 id 的前缀）能确认用户在哪一块，确认过的排前面。
+窗口标题在表里查不到就再爬一次，最多 60 秒一次；查不到期间走下面的回退路径，回退时 `card-content` 的 `parentDocumentId`
+会直接学进表里。
+
+**BoardModel（当前白板的所有卡片）**。标题换成 id 后，一次 `board-content <id> --format json` 装入该白板全部卡片
+（id、kind、title、frame、createdAt、document.id/body）。刷新时机：
+
+| 时机 | 为什么 |
+|---|---|
+| 窗口标题变化（`AllumeTracker` 的 AX 标题） | 切换了白板，立即换模型 |
+| 面板打开（⌘K） | 和 describeSelection 并行，不阻塞面板；装完后用新数据重刷卡片标题 |
+| 每条写命令（排列、统一大小、撤销）完成后 | 把自己改的位置同步进来 |
+| Allume 在前台时每 10 秒 | 兜底跟上用户手动的移动；不在前台不刷 |
+
+每次装入后，在后台按阅读顺序对前 12 张有缩略图的卡（image/pdf/subBoard）预热 `ThumbnailLoader` 的缓存，两张并发，
+这样 ⌘K 选到它们时图是现成的。所有这些调用在 `AllumeCLI` 里记为"后台"调用，日志行以 `cli[bg]` 开头。
+
+**谁用缓存、谁查 CLI**：
+
+| 场景 | 来源 |
+|---|---|
+| ⌘K 后补标题/类型/正文（`describeSelection`） | 选中的 id 全在模型里 → 直接用，0 次 CLI；有不在的（跨白板选中、模型还没装好、刚建的卡） → 原路径：`card-content` 取父白板 + `board-content`（scope → 白板 id 已知时跳过 `card-content`） |
+| 缩略图 | `ThumbnailLoader` 缓存命中 → 0 次；否则按类型取 1 次 |
+| 写命令前的撤销快照（`snapshotFrames`） | 模型 **2 秒内**刷新过且包含全部选中卡 → 用模型（面板日志"位置来自当前白板模型（x 秒前读取）"）；否则现查一次 `board-content`。撤销必须基于写之前的真实位置，这一点不拿缓存换 |
+| 排列时按标题/时间排序 | 上一步拿到的行（模型或现查），不另外调用 |
+
+日志里每次 ⌘K 有一行统计：`⌘K 统计：面板显示 N ms（CLI 前台 a 次，后台 b 次）；卡片信息就绪 M ms（CLI 前台 c 次，后台 d 次），k/n 张有标题`。
+"前台"是为了这次 ⌘K 才发的调用，"后台"是同时段恰好在跑的刷新/爬表/预热。实测：模型装好后 ⌘K 为
+`面板显示 5 ms（前台 0 次）；卡片信息就绪 23 ms（前台 0 次）`，之前是 3–5 次（`card-content` + `board-content` 每块白板各一次，再加缩略图）。
+
+局限：模型最多落后 10 秒（Allume 没有通知）；白板标题重名时靠选中卡片的 scope 纠正，⌘K 之前可能先装错一块；
+窗口标题不在表里（新建的白板）时要等重爬，期间一切走回退路径；`boards.json` 只在本机有效。
+
 ### 卡片缩略图从哪来
 
 层叠里的每张卡（`CardFace`）按类型显示不同内容；像素都来自 CLI，经 `open -W` 启动，stdout 落到临时文件再读回
@@ -176,7 +219,8 @@ frame 怎么读：`allume board-content <白板文档id> --format json` 一次�
 - 只恢复 frame 和存在性。卡片 zOrder、text chain 的尺寸（`card-move` 对 chain 忽略 `--width/--height`）、
   `card-gather` 可能改动的其他属性都不在记录范围内。
 - 记录是在命令**之前**读的；如果用户在命令和撤销之间手动动过这些卡片，撤销会把手动改动也盖掉。
-- 多出两次 CLI 调用（`card-content` + `board-content`，各约 150ms），面板日志只显示命令行和"已记录 N/M 张"，不显示 JSON。
+- 快照通常要一次 `board-content`（约 150–350ms）；白板模型 2 秒内刷新过就省掉这次（见"当前白板模型"）。
+  面板日志只显示命令行和"已记录 N/M 张"，不显示 JSON。
 
 ## 脆弱点
 
@@ -206,8 +250,10 @@ Sources/AllumeCompanion/
   AXDump.swift                     调试：把 Allume 的 AX 树写进日志
   SelectionReader.swift            剪贴板快照 → ⌘C → 解析 → 恢复
   HotKey.swift                     Carbon 全局快捷键 ⌘K（只在 Allume 前台时注册）
-  AllumeCLI.swift                  经 open -W 调 allume（原因见上）
-  CommandRunner.swift              三条命令 + 一层撤销（执行前记 id / frame）；describeSelection 补标题/正文并触发取图
+  AllumeCLI.swift                  经 open -W 调 allume（原因见上）；前台/后台调用计数
+  BoardIndex.swift                 标题 → 白板文档 id 表：BFS 爬取、boards.json 缓存、限频重爬
+  BoardModel.swift                 当前白板的卡片副本（BoardCard 行）：解析标题、四种刷新时机、缩略图预热
+  CommandRunner.swift              三条命令 + 一层撤销（执行前记 frame，优先用新鲜的模型）；describeSelection 先查模型再回退 CLI
   ThumbnailLoader.swift            按类型取缩略图（image/pdf 字节、subBoard 线框），NSCache 按卡片 id 缓存
   OverlayController.swift          命令面板 NSPanel 及定位
   CommandCatalog.swift             命令表、多语言别名、参数解析（纯 Swift，可单独 swiftc 测）

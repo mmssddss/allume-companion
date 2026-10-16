@@ -23,10 +23,32 @@ enum AllumeCLI {
         var ok: Bool { status == 0 }
     }
 
+    /// Running totals, so the ⌘K path can report how many CLI calls it needed. `foreground`
+    /// counts calls made on the user's behalf (describing the selection, running a command);
+    /// `background` counts the board index crawl, board model refreshes and thumbnail prewarming.
+    struct Counts: Equatable {
+        var foreground = 0
+        var background = 0
+        var total: Int { foreground + background }
+        static func - (a: Counts, b: Counts) -> Counts {
+            Counts(foreground: a.foreground - b.foreground, background: a.background - b.background)
+        }
+    }
+    private static let countsLock = NSLock()
+    nonisolated(unsafe) private static var _counts = Counts()
+    static var counts: Counts { countsLock.withLock { _counts } }
+    private static func count(background: Bool) {
+        countsLock.withLock { if background { _counts.background += 1 } else { _counts.foreground += 1 } }
+    }
+
     /// `raw`: keep stdout as bytes (`stdoutData`) instead of decoding it as text — for
     /// `card-content --contents raw` and `card-pdf-page`, which write image bytes to stdout.
-    static func run(_ args: [String], raw: Bool = false) async -> Result {
-        await Task.detached(priority: .userInitiated) { runSync(args, raw: raw) }.value
+    /// `background`: the call is maintenance (crawl, model refresh, prewarm), not something
+    /// the user is waiting for; only affects the counters and the log line.
+    static func run(_ args: [String], raw: Bool = false, background: Bool = false) async -> Result {
+        count(background: background)
+        if background { Log.info("cli[bg] " + render(args)) }
+        return await Task.detached(priority: background ? .utility : .userInitiated) { runSync(args, raw: raw) }.value
     }
 
     /// Resolved path of the real executable (open(1) needs the binary, not the symlink).

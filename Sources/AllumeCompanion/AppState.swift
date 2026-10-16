@@ -25,6 +25,9 @@ final class AppState: ObservableObject {
     @Published var allumeRunning = false
     @Published var boardTitle = ""
     @Published var selectedCardIds: [String] = []
+    /// True when `selectedCardIds` came from Allume via ⌘C (so the cards are on the current
+    /// board); false for the `ALLUME_SELECT_IDS` test preset, which may name cards anywhere.
+    var selectionFromAllume = false
     /// Titles/kinds/thumbnails of the selected cards, filled in asynchronously after ⌘K for the card stack.
     @Published var selectedCards: [CardSummary] = []
     @Published var selectionMessage = ""

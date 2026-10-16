@@ -30,6 +30,12 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   （字节在 stdout、元数据在 stderr），pdf 用 `card-pdf-page <id> --page 1 --max-dimension 256 -f json`（最小 256）；
   `AllumeCLI.run(…, raw: true)` 返回 `stdoutData`。`board-content -f json` 的行里已带 text/chain 的 `document.body`
   和 subBoard 的 `document.id`，不必再逐张 `card-content`。
+- 当前白板模型（README "当前白板模型"）：`BoardIndex` 用 `list-workspaces` → `board-content --kinds subBoard` BFS 建
+  标题→文档 id 表（缓存在 `~/Library/Application Support/AllumeCompanion/boards.json`），`BoardModel` 用一次 `board-content`
+  装入当前白板的卡片。⌘K 的 describeSelection 先查模型；撤销快照只在模型 2 秒内刷新过时用它，否则必须现查。
+  后台调用用 `AllumeCLI.run(…, background: true)`，日志里是 `cli[bg]`；每次 ⌘K 打印一行"⌘K 统计"，前台应为 0。
+  白板文档 id 的前缀等于它上面卡片 id 的 scope 前缀，可用来在同名白板间分辨。`open -W` 并发时偶发
+  "Unable to block on applications"，爬表时重试一次。
 - 测试面板外观：`ALLUME_SELECT_IDS=… ALLUME_SNAPSHOT=/path.png open build/AllumeCompanion.app`，再 `kill -USR1`，
   面板会渲染成 PNG（`screencapture` 在这里没有屏幕录制权限）。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。
