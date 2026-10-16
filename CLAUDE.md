@@ -22,4 +22,7 @@ macOS 菜单栏 app，贴在 Allume 窗口上的浮层 + 命令面板，所有�
 - CLI 自己是沙盒 app，直接 `Process` 启动时读不到 `isCLIReadOnly` → 一律只读（exit 7）；必须经 `open -W` 启动。
 - `allume search` 不接受空 query；`allume card-content <白板id>` 报 "No card"。
 - Allume 的 AX 树里卡片标题是 AXTextField 的 value（subBoard 也有），但没有选中状态，选中仍靠 ⌘C + 剪贴板。
+- CLI 做的删除/移动在 Allume 里 ⌘Z 撤不掉（不经过它的 undo manager），只能 `undelete` / `card-move` 恢复；面板的"撤销"就是这么做的。
+- `board-content` 只接受完整白板文档 id `<前缀>:<后缀>`，卡片 id 的 scope 前缀不够；`card-content <卡片id> -f json` 的
+  `parentDocumentId` 给出父白板文档 id，`frame` 给出位置尺寸。`card-move` 接受小数坐标；`undelete` 会把卡片放回原 frame。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。

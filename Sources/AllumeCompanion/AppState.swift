@@ -12,6 +12,8 @@ final class AppState: ObservableObject {
     @Published var log = ""
     @Published var isRunning = false
     @Published var columns = 3
+    /// Name of the step the "撤销" button would revert; nil when there is nothing to undo.
+    @Published var undoLabel: String?
 
     func appendLog(_ s: String) {
         log += s.hasSuffix("\n") ? s : s + "\n"

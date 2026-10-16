@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var trustTimer: Timer?
     private var usr1Source: DispatchSourceSignal?
     private var usr2Source: DispatchSourceSignal?
+    private var infoSource: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         runner = CommandRunner(state: state)
@@ -39,20 +40,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         usr1Source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
         usr1Source?.setEventHandler { [weak self] in self?.readSelectionAndShow() }
         usr1Source?.resume()
-        // Test hook: SIGUSR2 runs "排成 N 列" on the current selection, like clicking the button.
+        // Test hook: `ALLUME_SELECT_IDS=a,b,c` pre-fills the selection without going through ⌘C.
+        let env = ProcessInfo.processInfo.environment
+        if let ids = env["ALLUME_SELECT_IDS"], !ids.isEmpty {
+            state.selectedCardIds = ids.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
+            state.appendLog("测试：预设选中 \(state.selectedCardIds.count) 张 " + state.selectedCardIds.joined(separator: ", "))
+        }
+        // Test hook: SIGUSR2 runs a panel command on the current selection, like clicking its button.
+        // `ALLUME_USR2` picks which: gather (default), resize, delete.
         signal(SIGUSR2, SIG_IGN)
         usr2Source = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
         usr2Source?.setEventHandler { [weak self] in
             guard let self else { return }
-            if ProcessInfo.processInfo.environment["ALLUME_AXDUMP"] != nil, let pid = self.tracker.pid {
+            if env["ALLUME_AXDUMP"] != nil, let pid = self.tracker.pid {
                 AXDump.dump(pid: pid); return
             }
             Task { @MainActor in
-                await self.runner.gatherGrid(columns: self.state.columns)
+                switch env["ALLUME_USR2"] ?? "gather" {
+                case "resize": await self.runner.resizeAll()
+                case "delete": await self.runner.deleteAll()
+                default: await self.runner.gatherGrid(columns: self.state.columns)
+                }
                 Log.info("panel log:\n" + self.state.log)
             }
         }
         usr2Source?.resume()
+        // Test hook: SIGINFO (`kill -INFO`) presses "撤销".
+        signal(SIGINFO, SIG_IGN)
+        infoSource = DispatchSource.makeSignalSource(signal: SIGINFO, queue: .main)
+        infoSource?.setEventHandler { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in
+                await self.runner.undo()
+                Log.info("panel log:\n" + self.state.log)
+            }
+        }
+        infoSource?.resume()
 
         NotificationCenter.default.addObserver(forName: .togglePanel, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.overlay.togglePanel() }

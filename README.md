@@ -17,7 +17,9 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 - 签名：优先用钥匙串里的 Apple Development / Developer ID 证书（可用 `CODESIGN_IDENTITY` 指定），
   找不到就 ad-hoc。**ad-hoc 签名每次重新构建都会让 macOS 丢掉辅助功能授权**，要重新勾选。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
-- 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘⇧P；`kill -USR2 ...` 等于点"排成 N 列"；
+- 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘⇧P；`kill -USR2 ...` 等于点"排成 N 列"
+  （启动时设 `ALLUME_USR2=resize` 或 `delete` 可改成另两个按钮）；`kill -INFO ...` 等于点"撤销"；
+  `ALLUME_SELECT_IDS=a,b,c open build/AllumeCompanion.app` 启动时直接预设选中的卡片 id，不经过 ⌘C；
   用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志。
 - 它是菜单栏常驻 app（无 Dock 图标），从菜单栏图标里退出。
 
@@ -95,9 +97,38 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 | 排成 N 列（默认 3，Stepper 可调） | `allume card-gather --ids a,b,c --layout grid --columns N --x 80 --y 80 --spacing 40` |
 | 统一尺寸 200×150 | 逐张 `allume card-move --id <id> --width 200 --height 150` |
 | 删除…（面板内二次确认） | 逐张 `allume delete <id>`（软删除，可 `allume undelete <id>` 恢复） |
+| 撤销：<上一步> | 见下面"撤销上一步" |
 
-面板是 `NSPanel(.nonactivatingPanel)`，能接键盘（Esc 关闭、1/2/3 触发按钮）但不会把本 app 激活，
+按键 1/2/3/4 分别对应四个按钮。面板是 `NSPanel(.nonactivatingPanel)`，能接键盘（Esc 关闭、1/2/3 触发按钮）但不会把本 app 激活，
 Allume 保持前台。浮层只在 Allume 是前台 app 且主窗口可见时显示。
+
+### 撤销上一步
+
+**为什么 Allume 自己的 ⌘Z 不管用**：CLI 的删除和移动走的是 Allume 的 helper 管道（CLI 进程 → app 内的命令处理器
+→ 直接改文档），不经过界面层的 undo manager，所以在 Allume 里按 ⌘Z 撤不掉 CLI 做的事（实测）。
+只能用 CLI 自己把状态改回去：`allume undelete <id>` 和 `allume card-move`。
+
+于是 `CommandRunner` 在每条命令执行前先记下恢复所需的状态，面板上多一个"撤销：<上一步名字>"按钮（按键 4）：
+
+| 命令 | 执行前记录 | 撤销 = |
+|---|---|---|
+| 删除 | 删成功的 id 列表 | 逐张 `allume undelete <id>`（Allume 会把卡片放回原 frame，实测一致），并把这些 id 放回"选中" |
+| 排成 N 列 / 统一尺寸 | 每张卡当前的 frame（x,y,w,h） | 逐张 `allume card-move --id … --x … --y … --width … --height …` 回到原值 |
+
+frame 怎么读：`allume board-content <白板文档id> --format json` 一次给出整块白板上所有卡片的 `frame`。
+白板文档 id 不能从卡片 id 推出来——卡片 id `<scope>:<card>` 的 `scope` 等于父白板文档 id 的前缀，但后缀不同，
+而 `board-content` 只接受完整的 `<前缀>:<后缀>`（只给前缀报 "Invalid board id"，`<scope>:<scope>` 报 "No board"）。
+所以先对该白板的第一张选中卡跑一次 `allume card-content <卡片id> --format json`，它的 `parentDocumentId` 就是白板文档 id
+（按 scope 缓存在内存里，同一白板之后只需一次 `board-content`）。白板列表里没出现的卡片（例如选中跨多块白板）逐张
+用 `card-content` 补读；读不到 frame 的卡片会在日志里警告，撤销时不会恢复它们。
+
+局限：
+
+- **只有一层**：只记最近一步，新命令覆盖旧记录，撤销本身不可撤销；记录在内存里，app 重启就没了。
+- 只恢复 frame 和存在性。卡片 zOrder、text chain 的尺寸（`card-move` 对 chain 忽略 `--width/--height`）、
+  `card-gather` 可能改动的其他属性都不在记录范围内。
+- 记录是在命令**之前**读的；如果用户在命令和撤销之间手动动过这些卡片，撤销会把手动改动也盖掉。
+- 多出两次 CLI 调用（`card-content` + `board-content`，各约 150ms），面板日志只显示命令行和"已记录 N/M 张"，不显示 JSON。
 
 ## 脆弱点
 
@@ -128,7 +159,7 @@ Sources/AllumeCompanion/
   SelectionReader.swift            剪贴板快照 → ⌘C → 解析 → 恢复
   HotKey.swift                     Carbon 全局快捷键 ⌘⇧P
   AllumeCLI.swift                  经 open -W 调 allume（原因见上）
-  CommandRunner.swift              三条命令
+  CommandRunner.swift              三条命令 + 一层撤销（执行前记 id / frame）
   OverlayController.swift          两个 NSPanel（标题胶囊 + 命令面板）及定位
   Views.swift                      SwiftUI：PillView、CommandPanelView
   Log.swift                        ~/Library/Logs/AllumeCompanion.log

@@ -35,7 +35,7 @@ extension Notification.Name {
     static let togglePanel = Notification.Name("AllumeCompanion.togglePanel")
 }
 
-/// The command panel: selection summary, three commands, CLI output.
+/// The command panel: selection summary, three commands plus undo, CLI output.
 struct CommandPanelView: View {
     @ObservedObject var state: AppState
     let runner: CommandRunner
@@ -74,6 +74,17 @@ struct CommandPanelView: View {
     }
 
     private var commands: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            selectionCommands
+            Button(state.undoLabel.map { "撤销：\($0)" } ?? "撤销") { Task { await runner.undo() } }
+                .keyboardShortcut("4", modifiers: [])
+                .disabled(state.isRunning || state.undoLabel == nil)
+        }
+    }
+
+    /// Commands that act on the current selection (the undo button lives outside this group
+    /// because deleting empties the selection but must stay undoable).
+    private var selectionCommands: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Button("排成 \(state.columns) 列") { Task { await runner.gatherGrid(columns: state.columns) } }
