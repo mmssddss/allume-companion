@@ -1,40 +1,5 @@
 import SwiftUI
 
-/// The small pill glued under Allume's title bar.
-struct PillView: View {
-    @ObservedObject var state: AppState
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: state.axTrusted ? "rectangle.on.rectangle" : "exclamationmark.triangle")
-                .foregroundStyle(state.axTrusted ? Color.secondary : Color.orange)
-            Text(title).lineLimit(1).truncationMode(.middle)
-            Spacer(minLength: 0)
-            if !state.selectedCardIds.isEmpty {
-                Text("\(state.selectedCardIds.count) 张").foregroundStyle(.secondary)
-            }
-            Text("⌘K").font(.caption).foregroundStyle(.tertiary)
-        }
-        .font(.system(size: 12, weight: .medium))
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(.regularMaterial, in: Capsule())
-        .overlay(Capsule().strokeBorder(.quaternary))
-        .contentShape(Capsule())
-        .onTapGesture { NotificationCenter.default.post(name: .togglePanel, object: nil) }
-    }
-
-    private var title: String {
-        if !state.axTrusted { return "需要辅助功能权限" }
-        if !state.boardTitle.isEmpty { return state.boardTitle }
-        return "Allume"
-    }
-}
-
-extension Notification.Name {
-    static let togglePanel = Notification.Name("AllumeCompanion.togglePanel")
-}
-
 /// The command panel: selection summary, three commands plus undo, CLI output.
 struct CommandPanelView: View {
     @ObservedObject var state: AppState
@@ -48,7 +13,7 @@ struct CommandPanelView: View {
             commands
             Divider()
             output
-            Text("Esc 关闭 · ⌘K 重新读取选中").font(.caption2).foregroundStyle(.tertiary)
+            Text("Esc 或 ⌘K 关闭 · 再按 ⌘K 重新读取选中").font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

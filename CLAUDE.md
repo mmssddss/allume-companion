@@ -1,6 +1,6 @@
 # Allume Companion
 
-macOS 菜单栏 app，贴在 Allume 窗口上的浮层 + 命令面板，所有操作走 `/usr/local/bin/allume` CLI。
+macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所有操作走 `/usr/local/bin/allume` CLI。
 读 README.md 了解原理、权限和脆弱点；下面只记对改代码有用的事。
 
 ## 跑起来
@@ -13,7 +13,7 @@ macOS 菜单栏 app，贴在 Allume 窗口上的浮层 + 命令面板，所有�
 
 - 不截屏、不模拟点击 Allume；唯一允许模拟的按键是发给 Allume 的 ⌘C（读选中用）。
 - 对 Allume 的所有读写都通过 CLI（`AllumeCLI.run`），命令和输出要显示在面板日志里。
-- 浮层窗口必须是 `.nonactivatingPanel`，不能抢 Allume 的前台。
+- 面板窗口必须是 `.nonactivatingPanel`，不能抢 Allume 的前台。
 
 ## 已知事实（实测）
 

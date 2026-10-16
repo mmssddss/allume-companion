@@ -1,7 +1,7 @@
 # Allume Companion
 
-贴在 Allume（原 Muse）白板窗口上的伴生浮层：显示当前白板标题，在 Allume 里按 **⌘K** 读取当前选中的卡片，
-在命令面板里对它们批量执行 `allume` CLI 命令。所有对 Allume 的操作都走
+Allume（原 Muse）白板的伴生命令面板：在 Allume 里按 **⌘K**，它读取当前选中的卡片，从 Allume 窗口顶部弹出面板，
+对这些卡片批量执行 `allume` CLI 命令；Esc、再按一次 ⌘K、点回 Allume 或切走 Allume 都会收起。平时不显示任何东西。所有对 Allume 的操作都走
 `/usr/local/bin/allume`，不截屏、不模拟点击；唯一模拟的按键是发给 Allume 的 ⌘C。
 
 ## 构建与运行
@@ -27,7 +27,7 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 
 | 权限 | 用途 | 没有会怎样 |
 |---|---|---|
-| 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，浮层才能贴上去；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C | 浮层不显示，⌘K 读不到选中 |
+| 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，面板才能贴在窗口顶部；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C | 面板不出现，⌘K 读不到选中 |
 | Allume → Preferences → Command Line 里的读写模式 | `card-gather` / `card-move` / `delete` 都是写操作 | 面板里显示 `allume card-gather is unavailable: the CLI is in read-only mode`。如果设置里已经是 read-write 还报这个，见下面"CLI 为什么要用 open 启动" |
 
 首次启动会弹系统提示；也可以从菜单栏图标 → "打开辅助功能设置…"。不需要"输入监控"：全局快捷键用的是
@@ -100,8 +100,9 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 | 删除…（面板内二次确认） | 逐张 `allume delete <id>`（软删除，可 `allume undelete <id>` 恢复） |
 | 撤销：<上一步> | 见下面"撤销上一步" |
 
-按键 1/2/3/4 分别对应四个按钮。面板是 `NSPanel(.nonactivatingPanel)`，能接键盘（Esc 关闭、1/2/3 触发按钮）但不会把本 app 激活，
-Allume 保持前台。浮层只在 Allume 是前台 app 且主窗口可见时显示。
+按键 1/2/3/4 分别对应四个按钮。面板是 `NSPanel(.nonactivatingPanel)`，能接键盘（Esc 关闭、1/2/3/4 触发按钮）但不会把本 app 激活，
+Allume 保持前台。面板只在 ⌘K 之后出现，贴在 Allume 主窗口顶部居中，跟随窗口移动；Allume 不在前台就收起。
+面板头部显示当前白板名（来自 Allume 的窗口标题）。
 
 ### 撤销上一步
 
@@ -142,7 +143,7 @@ frame 怎么读：`allume board-content <白板文档id> --format json` 一次�
 - **Allume 的 ⌘C 会不会有副作用**（例如把卡片标记为"已复制"）未知，目前看没有。
 - 白板标题来自 Allume 的窗口标题，只有名字没有 id；Allume 若改成固定窗口标题就失效。
 - CLI 经 `open` 启动依赖 `open` 的 `--stdout/--stderr/-W` 行为，退出码靠 stderr 猜。
-- 浮层位置假设 Allume 主窗口顶部 52pt 是标题栏/工具栏，窗口全屏或分屏时没有特别处理。
+- 面板位置假设 Allume 主窗口顶部 52pt 是标题栏/工具栏，窗口全屏或分屏时没有特别处理。
 - AX 坐标按主显示器左上角换算成 AppKit 坐标，多显示器下已考虑，但只跟踪 `AXFocusedWindow`（否则 `AXMainWindow`）。
 
 ## 代码结构
@@ -161,7 +162,7 @@ Sources/AllumeCompanion/
   HotKey.swift                     Carbon 全局快捷键 ⌘K（只在 Allume 前台时注册）
   AllumeCLI.swift                  经 open -W 调 allume（原因见上）
   CommandRunner.swift              三条命令 + 一层撤销（执行前记 id / frame）
-  OverlayController.swift          两个 NSPanel（标题胶囊 + 命令面板）及定位
-  Views.swift                      SwiftUI：PillView、CommandPanelView
+  OverlayController.swift          命令面板 NSPanel 及定位
+  Views.swift                      SwiftUI：CommandPanelView
   Log.swift                        ~/Library/Logs/AllumeCompanion.log
 ```

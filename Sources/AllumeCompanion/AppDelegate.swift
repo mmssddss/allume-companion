@@ -35,12 +35,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ⌘K: kVK_ANSI_K = 0x28. Registered only while Allume is frontmost (see tracker.onChange)
         // so other apps keep their own ⌘K.
         hotKey = HotKey(keyCode: 0x28, modifiers: UInt32(cmdKey))
-        hotKey?.action = { [weak self] in self?.readSelectionAndShow() }
+        hotKey?.action = { [weak self] in
+            guard let self else { return }
+            // ⌘K toggles: closes the panel when it is up, otherwise reads the selection and opens it.
+            if self.overlay.isPanelVisible { self.overlay.hidePanel() } else { self.readSelectionAndShow() }
+        }
 
         // Test hook: `kill -USR1 $(pgrep -x AllumeCompanion)` behaves like pressing ⌘K.
         signal(SIGUSR1, SIG_IGN)
         usr1Source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
-        usr1Source?.setEventHandler { [weak self] in self?.readSelectionAndShow() }
+        usr1Source?.setEventHandler { [weak self] in self?.hotKey?.action?() }
         usr1Source?.resume()
         // Test hook: `ALLUME_SELECT_IDS=a,b,c` pre-fills the selection without going through ⌘C.
         let env = ProcessInfo.processInfo.environment
@@ -79,9 +83,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         infoSource?.resume()
 
-        NotificationCenter.default.addObserver(forName: .togglePanel, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.overlay.togglePanel() }
-        }
     }
 
     private func updateHotKey(allumeActive: Bool) {
