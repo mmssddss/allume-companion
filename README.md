@@ -298,3 +298,7 @@ Sources/AllumeCompanion/
   Views.swift                      SwiftUI：CommandPanelView（输入框 + 结果列表）、CardStackView / CardFace（缩略图、正文、图标三种面）
   Log.swift                        ~/Library/Logs/AllumeCompanion.log
 ```
+
+## 协议
+
+MIT，见 [LICENSE](LICENSE)。Allume 是 Muse Software 的产品，本项目与其无关，只是通过它公开的命令行工具和剪贴板格式配合工作。
