@@ -1,0 +1,118 @@
+import SwiftUI
+
+/// The small pill glued under Allume's title bar.
+struct PillView: View {
+    @ObservedObject var state: AppState
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: state.axTrusted ? "rectangle.on.rectangle" : "exclamationmark.triangle")
+                .foregroundStyle(state.axTrusted ? Color.secondary : Color.orange)
+            Text(title).lineLimit(1).truncationMode(.middle)
+            Spacer(minLength: 0)
+            if !state.selectedCardIds.isEmpty {
+                Text("\(state.selectedCardIds.count) 张").foregroundStyle(.secondary)
+            }
+            Text("⌘⇧P").font(.caption).foregroundStyle(.tertiary)
+        }
+        .font(.system(size: 12, weight: .medium))
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.regularMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(.quaternary))
+        .contentShape(Capsule())
+        .onTapGesture { NotificationCenter.default.post(name: .togglePanel, object: nil) }
+    }
+
+    private var title: String {
+        if !state.axTrusted { return "需要辅助功能权限" }
+        if !state.boardTitle.isEmpty { return state.boardTitle }
+        if !state.boardId.isEmpty { return String(state.boardId.suffix(12)) }
+        return "Allume"
+    }
+}
+
+extension Notification.Name {
+    static let togglePanel = Notification.Name("AllumeCompanion.togglePanel")
+}
+
+/// The command panel: selection summary, three commands, CLI output.
+struct CommandPanelView: View {
+    @ObservedObject var state: AppState
+    let runner: CommandRunner
+    @State private var confirmingDelete = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            Divider()
+            commands
+            Divider()
+            output
+            Text("Esc 关闭 · ⌘⇧P 重新读取选中").font(.caption2).foregroundStyle(.tertiary)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.quaternary))
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Text(state.selectedCardIds.isEmpty ? "没有选中的卡片" : "选中 \(state.selectedCardIds.count) 张卡")
+                    .font(.headline)
+                Spacer()
+                if state.isRunning { ProgressView().controlSize(.small) }
+            }
+            if !state.selectionMessage.isEmpty {
+                Text(state.selectionMessage).font(.caption).foregroundStyle(.secondary)
+            }
+            if !state.boardTitle.isEmpty {
+                Text("白板：\(state.boardTitle)").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var commands: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Button("排成 \(state.columns) 列") { Task { await runner.gatherGrid(columns: state.columns) } }
+                    .keyboardShortcut("1", modifiers: [])
+                Stepper("", value: $state.columns, in: 1...12).labelsHidden()
+                Text("grid · x80 y80 · 间距 40").font(.caption).foregroundStyle(.tertiary)
+            }
+            Button("统一尺寸 200×150") { Task { await runner.resizeAll() } }
+                .keyboardShortcut("2", modifiers: [])
+            if confirmingDelete {
+                HStack {
+                    Text("确认删除 \(state.selectedCardIds.count) 张卡？").foregroundStyle(.red)
+                    Button("删除", role: .destructive) {
+                        confirmingDelete = false
+                        Task { await runner.deleteAll() }
+                    }
+                    Button("取消") { confirmingDelete = false }.keyboardShortcut(.cancelAction)
+                }
+            } else {
+                Button("删除…", role: .destructive) { confirmingDelete = true }
+                    .keyboardShortcut("3", modifiers: [])
+            }
+        }
+        .disabled(state.isRunning || state.selectedCardIds.isEmpty)
+    }
+
+    private var output: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                Text(state.log.isEmpty ? "命令输出会显示在这里" : state.log)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(state.log.isEmpty ? .tertiary : .primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .id("end")
+            }
+            .frame(maxHeight: .infinity)
+            .onChange(of: state.log) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
+        }
+    }
+}
