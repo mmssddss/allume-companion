@@ -25,7 +25,11 @@ final class OverlayController {
     static let panelSize = CGSize(width: 560, height: 400)
     /// Height the view last asked for (search row + visible rows + footer).
     private var contentHeight: CGFloat = panelSize.height
-    static let topInset: CGFloat = 52   // just under Allume's title bar / toolbar
+    static let topInset: CGFloat = 52   // never higher than this below Allume's top edge
+    /// Height the panel had when it was last shown: it is centered in the Allume window at that
+    /// height, and later growth or shrinking only moves the bottom edge, so the search row
+    /// stays where the user's eyes already are.
+    private var anchorHeight: CGFloat = panelSize.height
 
     init(state: AppState, runner: CommandRunner) {
         self.state = state
@@ -78,6 +82,7 @@ final class OverlayController {
     func showPanel(expectedRows: Int? = nil) {
         guard let window else { return }
         if let n = expectedRows { contentHeight = PanelMetrics.height(forRows: n) }
+        anchorHeight = contentHeight
         panel.setFrame(panelFrame(for: window.frame), display: true)
         panel.makeKeyAndOrderFront(nil)
         NotificationCenter.default.post(name: .panelShown, object: nil)
@@ -101,9 +106,12 @@ final class OverlayController {
 
     /// Anchored at the top (just under Allume's title bar), so growing or shrinking only moves
     /// the bottom edge; never taller than the space left in the Allume window.
+    /// Centered in the Allume window (at the height it opened with), clamped to stay below
+    /// the title bar and inside the window.
     private func panelFrame(for w: CGRect) -> CGRect {
         let s = Self.panelSize
-        let top = w.maxY - Self.topInset
+        let maxTop = w.maxY - Self.topInset
+        let top = min(maxTop, w.midY + anchorHeight / 2)
         let height = min(contentHeight, max(120, top - w.minY - 16))
         return CGRect(x: w.midX - s.width / 2, y: top - height, width: s.width, height: height)
     }
