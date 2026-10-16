@@ -18,7 +18,7 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
   找不到就 ad-hoc。**ad-hoc 签名每次重新构建都会让 macOS 丢掉辅助功能授权**，要重新勾选。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
 - 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘K；`kill -USR2 ...` 等于点"排成 N 列"
-  （`ALLUME_USR2="resize 300x200"` 这类值会像在输入框里打字一样经过命令匹配）；`kill -INFO ...` 等于点"撤销"；
+  （`ALLUME_USR2="小"` 这类值会像在输入框里打字一样经过命令匹配）；`kill -INFO ...` 等于点"撤销"；
   `ALLUME_SELECT_IDS=a,b,c open build/AllumeCompanion.app` 启动时直接预设选中的卡片 id，不经过 ⌘C；
   用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志。
 - 它是菜单栏常驻 app（无 Dock 图标），从菜单栏图标里退出。
@@ -96,14 +96,17 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 执行后面板不关，底部一行显示结果（成功如"已排成 3 列"，失败是 stderr 第一行），可以接着输 `撤销`。
 
 命令和别名都在 `CommandCatalog.swift`，匹配规则：按空格和中英文边界分词，每个词要能匹配某个别名
-（完全相等 > 前缀 > 包含 > 子序列），数字和 `宽x高` 会被抽出来当参数：
+（完全相等 > 前缀 > 包含 > 子序列，同分时以最后一个词为准），数字会被抽出来当列数。
+尺寸只有小 / 中 / 大三档（4:3，中是 Allume 的默认卡片大小），没有自由输入宽高：
 
 | 输入示例 | 命令 | CLI |
 |---|---|---|
 | `排成4列`、`grid 4`、`sort`、`pailie` | 排成 N 列（默认 3） | `allume card-gather --ids … --layout grid --columns N --x <选中最小 x> --y <最小 y> --spacing 40`，ids 按先 y 后 x 的阅读顺序，网格锚在选中区域左上角 |
 | `一行`、`row`、`横排` | 排成一行 | `card-gather --layout row …` |
 | `一列`、`column`、`竖排` | 排成一列 | `card-gather --layout column …` |
-| `resize`、`尺寸 240 180`、`resize 300x200`、`chicun` | 统一尺寸（默认 200×150） | 逐张 `allume card-move --id <id> --width W --height H` |
+| `统一`、`大小`、`size`、`中` | 统一大小：中（200×150，Allume 默认） | 逐张 `allume card-move --id <id> --width 200 --height 150` |
+| `小`、`缩小`、`small` | 统一大小：小（160×120） | 同上，160×120 |
+| `大`、`放大`、`big` | 统一大小：大（280×210） | 同上，280×210 |
 | `撤销`、`undo`、`chexiao` | 撤销上一步 | 见下面 |
 
 输入为空时列出全部命令。没有选中卡片时只剩"撤销"。完整的命令与输出写进 `~/Library/Logs/AllumeCompanion.log`。
@@ -121,7 +124,7 @@ Allume 自己的 Delete 键就是删除，而且带原生 ⌘Z。
 
 | 命令 | 执行前记录 | 撤销 = |
 |---|---|---|
-| 排成 N 列 / 统一尺寸 | 每张卡当前的 frame（x,y,w,h） | 逐张 `allume card-move --id … --x … --y … --width … --height …` 回到原值 |
+| 排成 N 列 / 统一大小 | 每张卡当前的 frame（x,y,w,h） | 逐张 `allume card-move --id … --x … --y … --width … --height …` 回到原值 |
 
 frame 怎么读：`allume board-content <白板文档id> --format json` 一次给出整块白板上所有卡片的 `frame`。
 白板文档 id 不能从卡片 id 推出来——卡片 id `<scope>:<card>` 的 `scope` 等于父白板文档 id 的前缀，但后缀不同，

@@ -4,7 +4,7 @@ import Foundation
 /// Pure Swift (no AppKit) so it can be unit-tested with a plain `swiftc` build.
 enum CommandKind: Equatable {
     case gather(layout: String, columns: Int)   // card-gather --layout grid|row|column
-    case resize(width: Int, height: Int)        // card-move --width --height on each card
+    case resize(width: Int, height: Int)        // card-move --width --height on each card (one of `sizes`)
     case undo
 }
 
@@ -21,17 +21,14 @@ struct CommandSpec {
 
 struct ParsedArgs: Equatable {
     var number: Int?                 // first standalone integer, e.g. "grid 4" / "排成4列"
-    var size: (width: Int, height: Int)?
-
-    static func == (a: ParsedArgs, b: ParsedArgs) -> Bool {
-        a.number == b.number && a.size?.width == b.size?.width && a.size?.height == b.size?.height
-    }
 }
 
 struct CommandMatch: Identifiable {
     let spec: CommandSpec
     let args: ParsedArgs
     let score: Int
+    /// Score of the last typed word alone: the tie-breaker, since the latest word is the most specific.
+    let lastWordScore: Int
     var id: String { spec.id }
     var title: String { spec.display(args) }
     var kind: CommandKind { spec.build(args) }
@@ -39,7 +36,10 @@ struct CommandMatch: Identifiable {
 
 enum CommandCatalog {
     static let defaultColumns = 3
-    static let defaultSize = (width: 200, height: 150)
+    /// Three fixed card sizes (4:3, Allume's default card is 200×150 = 中). No free-form sizes.
+    static let sizes: [(name: String, width: Int, height: Int)] = [
+        ("小", 160, 120), ("中", 200, 150), ("大", 280, 210),
+    ]
 
     static let specs: [CommandSpec] = [
         CommandSpec(id: "grid", title: "排成 N 列", hint: "网格，锚在选中区域左上角，可加数字：grid 4 / 排成4列",
@@ -60,12 +60,24 @@ enum CommandCatalog {
                     needsSelection: true,
                     build: { _ in .gather(layout: "column", columns: 0) },
                     display: { _ in "排成一列" }),
-        CommandSpec(id: "resize", title: "统一尺寸", hint: "默认 200×150，可写 resize 300x200 / 尺寸 240 180",
-                    symbol: "arrow.up.left.and.arrow.down.right",
-                    aliases: ["尺寸", "大小", "统一", "同样大", "resize", "size", "scale", "dimensions", "chicun", "daxiao", "tongyi"],
+        CommandSpec(id: "size-medium", title: "统一大小：中", hint: "200×150（Allume 默认大小）",
+                    symbol: "square.resize",
+                    aliases: ["统一", "大小", "尺寸", "中", "中等", "一样大", "同样大", "size", "same", "medium", "normal", "tongyi", "daxiao", "zhong"],
                     needsSelection: true,
-                    build: { .resize(width: $0.size?.width ?? defaultSize.width, height: $0.size?.height ?? defaultSize.height) },
-                    display: { "统一尺寸 \($0.size?.width ?? defaultSize.width)×\($0.size?.height ?? defaultSize.height)" }),
+                    build: { _ in .resize(width: sizes[1].width, height: sizes[1].height) },
+                    display: { _ in "统一大小：中" }),
+        CommandSpec(id: "size-small", title: "统一大小：小", hint: "160×120",
+                    symbol: "arrow.down.right.and.arrow.up.left",
+                    aliases: ["小", "缩小", "减小", "变小", "small", "smaller", "shrink", "xiao", "suoxiao"],
+                    needsSelection: true,
+                    build: { _ in .resize(width: sizes[0].width, height: sizes[0].height) },
+                    display: { _ in "统一大小：小" }),
+        CommandSpec(id: "size-large", title: "统一大小：大", hint: "280×210",
+                    symbol: "arrow.up.left.and.arrow.down.right",
+                    aliases: ["大", "放大", "变大", "增大", "large", "big", "bigger", "enlarge", "da", "fangda"],
+                    needsSelection: true,
+                    build: { _ in .resize(width: sizes[2].width, height: sizes[2].height) },
+                    display: { _ in "统一大小：大" }),
         CommandSpec(id: "undo", title: "撤销", hint: "撤销上一步（Allume 自己的 ⌘Z 撤不掉 CLI 做的事）",
                     symbol: "arrow.uturn.backward",
                     aliases: ["撤销", "撤回", "回退", "还原", "undo", "revert", "back", "chexiao", "huitui"],
@@ -79,27 +91,31 @@ enum CommandCatalog {
         let args = parseArgs(query)
         let words = normalizedWords(query)
         if words.isEmpty {
-            return specs.map { CommandMatch(spec: $0, args: args, score: 0) }
+            return specs.map { CommandMatch(spec: $0, args: args, score: 0, lastWordScore: 0) }
         }
         return specs.compactMap { spec in
             // Every word must match some alias; the score is the sum of the best per-word scores.
-            var total = 0
+            var total = 0, last = 0
             for w in words {
                 let best = spec.aliases.map { score(word: w, alias: $0) }.max() ?? 0
                 if best == 0 { return nil }
                 total += best
+                last = best
             }
-            return CommandMatch(spec: spec, args: args, score: total)
+            return CommandMatch(spec: spec, args: args, score: total, lastWordScore: last)
         }
-        .sorted { $0.score != $1.score ? $0.score > $1.score : order($0.spec) < order($1.spec) }
+        .sorted {
+            if $0.score != $1.score { return $0.score > $1.score }
+            if $0.lastWordScore != $1.lastWordScore { return $0.lastWordScore > $1.lastWordScore }
+            return order($0.spec) < order($1.spec)
+        }
     }
 
     private static func order(_ spec: CommandSpec) -> Int { specs.firstIndex { $0.id == spec.id } ?? 0 }
 
-    /// Lowercased words with digits and size expressions removed (those become args).
+    /// Lowercased words with digits removed (those become args).
     static func normalizedWords(_ query: String) -> [String] {
         var q = query.lowercased()
-        q = q.replacingOccurrences(of: #"\d+\s*[x×*]\s*\d+"#, with: " ", options: .regularExpression)
         q = q.replacingOccurrences(of: #"\d+"#, with: " ", options: .regularExpression)
         // Chinese has no spaces: split CJK runs from Latin runs, keep CJK runs whole.
         var words: [String] = []
@@ -117,10 +133,12 @@ enum CommandCatalog {
         return words
     }
 
-    /// 4 = exact, 3 = prefix, 2 = substring (either direction for CJK), 1 = subsequence, 0 = none.
+    /// 4 = exact, 3 = prefix (or a multi-character alias inside the word, e.g. 统一大小 ⊃ 统一),
+    /// 2 = substring either way, 1 = subsequence, 0 = none.
     static func score(word: String, alias: String) -> Int {
         if word == alias { return 4 }
         if alias.hasPrefix(word) { return 3 }
+        if word.contains(alias), alias.count >= 2 { return 3 }
         if alias.contains(word) || word.contains(alias) { return 2 }
         return isSubsequence(word, of: alias) ? 1 : 0
     }
@@ -139,17 +157,10 @@ enum CommandCatalog {
     static func parseArgs(_ query: String) -> ParsedArgs {
         var args = ParsedArgs()
         let ns = query as NSString
-        if let m = try? NSRegularExpression(pattern: #"(\d+)\s*[x×*]\s*(\d+)"#).firstMatch(in: query, range: NSRange(location: 0, length: ns.length)) {
-            args.size = (Int(ns.substring(with: m.range(at: 1))) ?? 0, Int(ns.substring(with: m.range(at: 2))) ?? 0)
-        } else {
-            // "resize 240 180": two standalone numbers form a size.
-            let nums = (try? NSRegularExpression(pattern: #"\d+"#))?
-                .matches(in: query, range: NSRange(location: 0, length: ns.length))
-                .compactMap { Int(ns.substring(with: $0.range)) } ?? []
-            if nums.count >= 2 { args.size = (nums[0], nums[1]) }
-            args.number = nums.first
-        }
-        if let s = args.size, s.width <= 0 || s.height <= 0 { args.size = nil }
+        let nums = (try? NSRegularExpression(pattern: #"\d+"#))?
+            .matches(in: query, range: NSRange(location: 0, length: ns.length))
+            .compactMap { Int(ns.substring(with: $0.range)) } ?? []
+        args.number = nums.first
         if let n = args.number, n <= 0 || n > 50 { args.number = nil }
         return args
     }

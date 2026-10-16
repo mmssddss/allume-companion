@@ -195,7 +195,8 @@ final class CommandRunner {
 
     func resizeAll(width: Int = 200, height: Int = 150) async {
         await guarded {
-            await frameStep(label: "统一尺寸 \(width)×\(height)") { _ in
+            let name = CommandCatalog.sizes.first { $0.width == width && $0.height == height }?.name
+            await frameStep(label: name.map { "统一大小：\($0)" } ?? "统一尺寸 \(width)×\(height)") { _ in
                 var any = false
                 for id in state.selectedCardIds {
                     if await exec(["card-move", "--id", id, "--width", "\(width)", "--height", "\(height)"]).ok { any = true }
