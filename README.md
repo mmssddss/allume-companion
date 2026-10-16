@@ -18,7 +18,7 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
   找不到就 ad-hoc。**ad-hoc 签名每次重新构建都会让 macOS 丢掉辅助功能授权**，要重新勾选。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
 - 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘K；`kill -USR2 ...` 等于点"排成 N 列"
-  （启动时设 `ALLUME_USR2=resize` 可改成"统一尺寸"）；`kill -INFO ...` 等于点"撤销"；
+  （`ALLUME_USR2="resize 300x200"` 这类值会像在输入框里打字一样经过命令匹配）；`kill -INFO ...` 等于点"撤销"；
   `ALLUME_SELECT_IDS=a,b,c open build/AllumeCompanion.app` 启动时直接预设选中的卡片 id，不经过 ⌘C；
   用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志。
 - 它是菜单栏常驻 app（无 Dock 图标），从菜单栏图标里退出。
@@ -89,21 +89,27 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 5. 把快照写回剪贴板，恢复用户原来复制的东西；
 6. 打开命令面板，显示"选中 N 张卡"。
 
-### 命令面板
+### 命令面板（Spotlight 风格）
 
-命令经 `open -W` 调 `/usr/local/bin/allume`（原因见上），面板只显示一行结果（成功时"已排成 3 列"，失败时 stderr 第一行），
-完整的命令与输出写进 `~/Library/Logs/AllumeCompanion.log`。
+⌘K 之后面板从 Allume 窗口顶部弹出：左边是选中卡片的层叠缩略（最多叠 3 张，角标是张数，标题和类型图标
+用 `board-content` 异步补上），右边是命令输入框，下面列出匹配的命令。↑↓ 选，⏎ 执行，Esc 或再按 ⌘K 关闭。
+执行后面板不关，底部一行显示结果（成功如"已排成 3 列"，失败是 stderr 第一行），可以接着输 `撤销`。
 
-| 按钮 | 命令 |
-|---|---|
-| 排成 N 列（默认 3，Stepper 可调） | `allume card-gather --ids a,b,c --layout grid --columns N --x 80 --y 80 --spacing 40` |
-| 统一尺寸 200×150 | 逐张 `allume card-move --id <id> --width 200 --height 150` |
-| 撤销：<上一步> | 见下面"撤销上一步" |
+命令和别名都在 `CommandCatalog.swift`，匹配规则：按空格和中英文边界分词，每个词要能匹配某个别名
+（完全相等 > 前缀 > 包含 > 子序列），数字和 `宽x高` 会被抽出来当参数：
 
-按键 1/2/3 分别对应三个按钮。不提供删除：Allume 自己的 Delete 键就是删除，而且带原生 ⌘Z。
-面板是 `NSPanel(.nonactivatingPanel)`，能接键盘（Esc 关闭、1/2/3 触发按钮）但不会把本 app 激活，
-Allume 保持前台。面板只在 ⌘K 之后出现，贴在 Allume 主窗口顶部居中，跟随窗口移动；Allume 不在前台就收起。
-面板头部显示当前白板名（来自 Allume 的窗口标题）。
+| 输入示例 | 命令 | CLI |
+|---|---|---|
+| `排成4列`、`grid 4`、`sort`、`pailie` | 排成 N 列（默认 3） | `allume card-gather --ids … --layout grid --columns N --x <选中最小 x> --y <最小 y> --spacing 40`，ids 按先 y 后 x 的阅读顺序，网格锚在选中区域左上角 |
+| `一行`、`row`、`横排` | 排成一行 | `card-gather --layout row …` |
+| `一列`、`column`、`竖排` | 排成一列 | `card-gather --layout column …` |
+| `resize`、`尺寸 240 180`、`resize 300x200`、`chicun` | 统一尺寸（默认 200×150） | 逐张 `allume card-move --id <id> --width W --height H` |
+| `撤销`、`undo`、`chexiao` | 撤销上一步 | 见下面 |
+
+输入为空时列出全部命令。没有选中卡片时只剩"撤销"。完整的命令与输出写进 `~/Library/Logs/AllumeCompanion.log`。
+
+面板是 `NSPanel(.nonactivatingPanel)`，能接键盘但不会把本 app 激活，Allume 保持前台。不提供删除：
+Allume 自己的 Delete 键就是删除，而且带原生 ⌘Z。
 
 ### 撤销上一步
 
@@ -111,7 +117,7 @@ Allume 保持前台。面板只在 ⌘K 之后出现，贴在 Allume 主窗口�
 → 直接改文档），不经过界面层的 undo manager，所以在 Allume 里按 ⌘Z 撤不掉 CLI 做的事（实测）。
 只能用 CLI 自己把状态改回去：`allume card-move`（如果用 CLI 删过卡，`allume undelete <id>` 能恢复）。
 
-于是 `CommandRunner` 在每条命令执行前先记下恢复所需的状态，面板上多一个"撤销：<上一步名字>"按钮（按键 3）：
+于是 `CommandRunner` 在每条命令执行前先记下恢复所需的状态，面板里的"撤销"命令：
 
 | 命令 | 执行前记录 | 撤销 = |
 |---|---|---|
@@ -163,6 +169,7 @@ Sources/AllumeCompanion/
   AllumeCLI.swift                  经 open -W 调 allume（原因见上）
   CommandRunner.swift              三条命令 + 一层撤销（执行前记 id / frame）
   OverlayController.swift          命令面板 NSPanel 及定位
-  Views.swift                      SwiftUI：CommandPanelView
+  CommandCatalog.swift             命令表、多语言别名、参数解析（纯 Swift，可单独 swiftc 测）
+  Views.swift                      SwiftUI：CommandPanelView（输入框 + 结果列表）、CardStackView
   Log.swift                        ~/Library/Logs/AllumeCompanion.log
 ```

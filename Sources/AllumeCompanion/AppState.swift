@@ -1,6 +1,12 @@
 import Foundation
 import Combine
 
+struct CardSummary: Identifiable, Equatable {
+    let id: String
+    var title: String
+    var kind: String
+}
+
 /// Shared observable state for the overlay views.
 @MainActor
 final class AppState: ObservableObject {
@@ -8,6 +14,8 @@ final class AppState: ObservableObject {
     @Published var allumeRunning = false
     @Published var boardTitle = ""
     @Published var selectedCardIds: [String] = []
+    /// Titles/kinds of the selected cards, filled in asynchronously after ⌘K for the card stack.
+    @Published var selectedCards: [CardSummary] = []
     @Published var selectionMessage = ""
     @Published var log = ""
     @Published var isRunning = false

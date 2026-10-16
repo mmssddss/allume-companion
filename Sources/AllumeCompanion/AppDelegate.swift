@@ -51,9 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let ids = env["ALLUME_SELECT_IDS"], !ids.isEmpty {
             state.selectedCardIds = ids.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
             state.appendLog("测试：预设选中 \(state.selectedCardIds.count) 张 " + state.selectedCardIds.joined(separator: ", "))
+            Task { @MainActor in await runner.describeSelection() }
         }
         // Test hook: SIGUSR2 runs a panel command on the current selection, like clicking its button.
-        // `ALLUME_USR2` picks which: gather (default), resize.
+        // `ALLUME_USR2` is a command query exactly as one would type it in the panel
+        // ("grid 4", "resize 300x200", "一行", "undo"); default "排成 3 列".
         signal(SIGUSR2, SIG_IGN)
         usr2Source = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
         usr2Source?.setEventHandler { [weak self] in
@@ -62,9 +64,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 AXDump.dump(pid: pid); return
             }
             Task { @MainActor in
-                switch env["ALLUME_USR2"] ?? "gather" {
-                case "resize": await self.runner.resizeAll()
-                default: await self.runner.gatherGrid(columns: self.state.columns)
+                let query = env["ALLUME_USR2"] ?? "排成 3 列"
+                if let match = CommandCatalog.matches(for: query).first {
+                    Log.info("test: \"\(query)\" → \(match.title)")
+                    await self.runner.run(match.kind)
+                } else {
+                    Log.info("test: no command matches \"\(query)\"")
                 }
                 Log.info("panel log:\n" + self.state.log)
             }
@@ -132,6 +137,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             tracker.refresh()
             overlay.update(window: tracker.currentWindow())
             overlay.showPanel()
+            await runner.describeSelection()
         }
     }
 

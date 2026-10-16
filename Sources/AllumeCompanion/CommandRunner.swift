@@ -24,6 +24,7 @@ final class CommandRunner {
     private struct CardRow: Decodable {
         let id: String
         let kind: String?
+        let title: String?
         let frame: Frame
         let parentDocumentId: String?
     }
@@ -78,10 +79,17 @@ final class CommandRunner {
         return r.ok ? decodeRows(r.stdout).first : nil
     }
 
-    /// Current frames of `ids`, read with one `board-content` per board (plus `card-content` for
-    /// the first card of a board we have not seen, and for any card the board listing misses).
+    /// Current frames of `ids` (see `fetchRows`).
     private func snapshotFrames(_ ids: [String]) async -> [String: Frame] {
-        var frames: [String: Frame] = [:]
+        let rows = await fetchRows(ids)
+        state.appendLog("已记录 \(rows.count)/\(ids.count) 张卡片的位置和尺寸（撤销用）")
+        return rows.mapValues(\.frame)
+    }
+
+    /// Current rows of `ids`, read with one `board-content` per board (plus `card-content` for
+    /// the first card of a board we have not seen, and for any card the board listing misses).
+    private func fetchRows(_ ids: [String]) async -> [String: CardRow] {
+        var frames: [String: CardRow] = [:]
         let scopes = ids.reduce(into: [String]()) { acc, id in
             let s = String(id.prefix { $0 != ":" })
             if !acc.contains(s) { acc.append(s) }
@@ -89,23 +97,44 @@ final class CommandRunner {
         for scope in scopes {
             let scopeIds = ids.filter { $0.hasPrefix(scope + ":") }
             if boardIdByScope[scope] == nil, let first = scopeIds.first, let row = await readCard(first) {
-                frames[row.id] = row.frame
+                frames[row.id] = row
                 boardIdByScope[scope] = row.parentDocumentId
             }
             if let boardId = boardIdByScope[scope] {
                 let r = await exec(["board-content", boardId, "--format", "json"], showStdout: false)
                 if r.ok {
-                    for row in decodeRows(r.stdout) where scopeIds.contains(row.id) { frames[row.id] = row.frame }
+                    for row in decodeRows(r.stdout) where scopeIds.contains(row.id) { frames[row.id] = row }
                 } else {
                     boardIdByScope[scope] = nil // stale cache; fall back to card-content below
                 }
             }
             for id in scopeIds where frames[id] == nil {
-                if let row = await readCard(id) { frames[id] = row.frame }
+                if let row = await readCard(id) { frames[id] = row }
             }
         }
-        state.appendLog("已记录 \(frames.count)/\(ids.count) 张卡片的位置和尺寸（撤销用）")
         return frames
+    }
+
+    /// Fills `state.selectedCards` (titles and kinds) for the panel's card stack.
+    func describeSelection() async {
+        let ids = state.selectedCardIds
+        state.selectedCards = ids.map { CardSummary(id: $0, title: "", kind: "") }
+        guard !ids.isEmpty else { return }
+        let rows = await fetchRows(ids)
+        guard state.selectedCardIds == ids else { return } // selection changed meanwhile
+        state.selectedCards = ids.map { id in
+            CardSummary(id: id, title: rows[id]?.title ?? "", kind: rows[id]?.kind ?? "")
+        }
+        Log.info("selection described: " + state.selectedCards.map { "\($0.kind):\($0.title)" }.joined(separator: " | "))
+    }
+
+    /// Dispatches a command picked in the panel.
+    func run(_ kind: CommandKind) async {
+        switch kind {
+        case .gather(let layout, let columns): await gather(layout: layout, columns: columns)
+        case .resize(let w, let h): await resizeAll(width: w, height: h)
+        case .undo: await undo()
+        }
     }
 
     private static func num(_ v: Double) -> String {
@@ -141,10 +170,14 @@ final class CommandRunner {
     /// x and smallest y among the selected cards), not at the board origin, and in reading order
     /// (by y, then x) so the grid keeps the cards' visual order. Falls back to (80, 80) when no
     /// frame could be read.
-    func gatherGrid(columns: Int) async {
+    func gatherGrid(columns: Int) async { await gather(layout: "grid", columns: columns) }
+
+    /// `layout` is grid, row or column (card-gather's vocabulary); `columns` only matters for grid.
+    func gather(layout: String, columns: Int) async {
         await guarded {
             let cols = max(1, columns)
-            await frameStep(label: "排成 \(cols) 列") { frames in
+            let label = layout == "grid" ? "排成 \(cols) 列" : (layout == "row" ? "排成一行" : "排成一列")
+            await frameStep(label: label) { frames in
                 let known = state.selectedCardIds.compactMap { id in frames[id].map { (id, $0) } }
                 let originX = known.map(\.1.x).min() ?? 80
                 let originY = known.map(\.1.y).min() ?? 80
@@ -152,9 +185,10 @@ final class CommandRunner {
                     abs(a.1.y - b.1.y) > 1 ? a.1.y < b.1.y : a.1.x < b.1.x
                 }.map(\.0)
                 let ids = ordered + state.selectedCardIds.filter { !ordered.contains($0) }
-                return await exec(["card-gather", "--ids", ids.joined(separator: ","), "--layout", "grid",
-                                   "--columns", "\(cols)", "--x", Self.num(originX), "--y", Self.num(originY),
-                                   "--spacing", "40"]).ok
+                var args = ["card-gather", "--ids", ids.joined(separator: ","), "--layout", layout,
+                            "--x", Self.num(originX), "--y", Self.num(originY), "--spacing", "40"]
+                if layout == "grid" { args += ["--columns", "\(cols)"] }
+                return await exec(args).ok
             }
         }
     }

@@ -22,7 +22,7 @@ final class OverlayController {
     let panel: OverlayPanel
     private var window: AllumeTracker.WindowInfo?
 
-    static let panelSize = CGSize(width: 440, height: 210)
+    static let panelSize = CGSize(width: 560, height: 330)
     static let topInset: CGFloat = 52   // just under Allume's title bar / toolbar
 
     init(state: AppState, runner: CommandRunner) {
@@ -66,6 +66,7 @@ final class OverlayController {
         guard let window else { return }
         panel.setFrame(panelFrame(for: window.frame), display: true)
         panel.makeKeyAndOrderFront(nil)
+        NotificationCenter.default.post(name: .panelShown, object: nil)
         Log.info("panel shown at \(panel.frame)")
     }
 
