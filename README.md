@@ -91,7 +91,8 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 
 ### 命令面板
 
-命令通过 `Process` 调 `/usr/local/bin/allume`，stdout/stderr 原样显示在面板下半部分。
+命令经 `open -W` 调 `/usr/local/bin/allume`（原因见上），面板只显示一行结果（成功时"已排成 3 列"，失败时 stderr 第一行），
+完整的命令与输出写进 `~/Library/Logs/AllumeCompanion.log`。
 
 | 按钮 | 命令 |
 |---|---|

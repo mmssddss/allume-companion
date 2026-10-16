@@ -51,7 +51,10 @@ final class CommandRunner {
         let r = await AllumeCLI.run(args)
         if showStdout, !r.stdout.isEmpty { state.appendLog(r.stdout) }
         if !r.stderr.isEmpty { state.appendLog("stderr: " + r.stderr) }
-        if !r.ok { state.appendLog("exit \(r.status)") }
+        if !r.ok {
+            state.appendLog("exit \(r.status)")
+            state.status = r.stderr.split(separator: "\n").first.map(String.init) ?? "命令失败（exit \(r.status)）"
+        }
         return r
     }
 
@@ -59,6 +62,7 @@ final class CommandRunner {
         guard !state.isRunning else { return }
         guard !state.selectedCardIds.isEmpty else { state.appendLog("没有选中的卡片。先按 ⌘K 读取。"); return }
         state.isRunning = true
+        state.status = ""
         await body()
         state.isRunning = false
     }
@@ -124,6 +128,7 @@ final class CommandRunner {
             state.appendLog("警告：\(missing.count) 张卡片读不到位置，撤销时不会恢复它们")
         }
         guard await body(before) else { return }
+        state.status = "已\(label)"
         guard !before.isEmpty else { state.appendLog("没有可撤销的记录"); return }
         undoEntry = UndoEntry(label: label,
                               commands: ids.compactMap { id in before[id].map { moveBack(id, to: $0) } })
@@ -178,6 +183,7 @@ final class CommandRunner {
         state.appendLog("撤销：\(entry.label)")
         var failed = 0
         for cmd in entry.commands where !(await exec(cmd).ok) { failed += 1 }
-        state.appendLog(failed == 0 ? "已撤销：\(entry.label)" : "撤销 \(entry.label)：\(failed)/\(entry.commands.count) 条失败")
+        state.status = failed == 0 ? "已撤销：\(entry.label)" : "撤销 \(entry.label)：\(failed)/\(entry.commands.count) 条失败"
+        state.appendLog(state.status)
     }
 }

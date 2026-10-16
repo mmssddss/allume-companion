@@ -22,7 +22,7 @@ final class OverlayController {
     let panel: OverlayPanel
     private var window: AllumeTracker.WindowInfo?
 
-    static let panelSize = CGSize(width: 440, height: 400)
+    static let panelSize = CGSize(width: 440, height: 210)
     static let topInset: CGFloat = 52   // just under Allume's title bar / toolbar
 
     init(state: AppState, runner: CommandRunner) {
@@ -78,7 +78,7 @@ final class OverlayController {
     private func panelFrame(for w: CGRect) -> CGRect {
         let s = Self.panelSize
         let top = w.maxY - Self.topInset
-        let height = min(s.height, max(200, top - w.minY - 16))
+        let height = min(s.height, max(120, top - w.minY - 16))
         return CGRect(x: w.midX - s.width / 2, y: top - height, width: s.width, height: height)
     }
 }

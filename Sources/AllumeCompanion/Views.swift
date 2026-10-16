@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// The command panel: selection summary, three commands plus undo, CLI output.
+/// The command panel: selection summary, two commands plus undo, one status line.
+/// The full CLI transcript is not shown; it goes to ~/Library/Logs/AllumeCompanion.log.
 struct CommandPanelView: View {
     @ObservedObject var state: AppState
     let runner: CommandRunner
@@ -10,8 +11,9 @@ struct CommandPanelView: View {
             header
             Divider()
             commands
-            Divider()
-            output
+            if !state.status.isEmpty {
+                Text(state.status).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
             Text("Esc 或 ⌘K 关闭 · 再按 ⌘K 重新读取选中").font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(14)
@@ -60,20 +62,5 @@ struct CommandPanelView: View {
                 .keyboardShortcut("2", modifiers: [])
         }
         .disabled(state.isRunning || state.selectedCardIds.isEmpty)
-    }
-
-    private var output: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                Text(state.log.isEmpty ? "命令输出会显示在这里" : state.log)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(state.log.isEmpty ? .tertiary : .primary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .id("end")
-            }
-            .frame(maxHeight: .infinity)
-            .onChange(of: state.log) { _, _ in proxy.scrollTo("end", anchor: .bottom) }
-        }
     }
 }
