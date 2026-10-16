@@ -63,7 +63,9 @@ struct CommandPanelView: View {
 
     private var searchRow: some View {
         HStack(spacing: 12) {
-            CardStackView(cards: state.selectedCards, count: state.selectedCardIds.count)
+            if !state.selectedCardIds.isEmpty {
+                CardStackView(cards: state.selectedCards, count: state.selectedCardIds.count)
+            }
             TextField(placeholder, text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 20, weight: .regular))
@@ -78,10 +80,10 @@ struct CommandPanelView: View {
         .frame(height: PanelMetrics.searchRow)
     }
 
+    /// With nothing selected the field just invites a command; the reason nothing was read
+    /// (timeout, no Allume…) goes to the log, not in the user's face.
     private var placeholder: String {
-        state.selectedCardIds.isEmpty
-            ? (state.selectionMessage.isEmpty ? "没有选中的卡片" : state.selectionMessage)
-            : "对 \(state.selectedCardIds.count) 张卡做什么？排列、resize、撤销…"
+        state.selectedCardIds.isEmpty ? "输入命令…" : "对 \(state.selectedCardIds.count) 张卡做什么？排列、大小、撤销…"
     }
 
     // MARK: - Results
@@ -178,12 +180,6 @@ struct CardStackView: View {
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            if count == 0 {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [3]))
-                    .foregroundStyle(.quaternary)
-                    .frame(width: size.width, height: size.height)
-            }
             ForEach(Array(cards.prefix(Self.visible).enumerated().reversed()), id: \.element.id) { i, card in
                 CardFace(card: card, size: size)
                     .offset(x: CGFloat(i) * 6, y: CGFloat(i) * -4)
