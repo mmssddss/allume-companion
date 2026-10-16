@@ -58,7 +58,7 @@ final class CommandRunner {
 
     private func guarded(_ body: () async -> Void) async {
         guard !state.isRunning else { return }
-        guard !state.selectedCardIds.isEmpty else { state.appendLog("没有选中的卡片。先按 ⌘⇧P 读取。"); return }
+        guard !state.selectedCardIds.isEmpty else { state.appendLog("没有选中的卡片。先按 ⌘K 读取。"); return }
         state.isRunning = true
         await body()
         state.isRunning = false

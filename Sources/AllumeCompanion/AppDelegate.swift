@@ -26,16 +26,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.info("allume window: \(info.map { "\($0.frame) active=\($0.isActive) title=\($0.title)" } ?? "none")")
                 self?.state.allumeRunning = info != nil
                 self?.state.boardTitle = info?.title ?? ""
+                self?.updateHotKey(allumeActive: info?.isActive ?? false)
                 self?.overlay.update(window: info)
             }
         }
         tracker.start()
 
-        // ⌘⇧P: kVK_ANSI_P = 0x23
-        hotKey = HotKey(keyCode: 0x23, modifiers: UInt32(cmdKey | shiftKey))
+        // ⌘K: kVK_ANSI_K = 0x28. Registered only while Allume is frontmost (see tracker.onChange)
+        // so other apps keep their own ⌘K.
+        hotKey = HotKey(keyCode: 0x28, modifiers: UInt32(cmdKey))
         hotKey?.action = { [weak self] in self?.readSelectionAndShow() }
 
-        // Test hook: `kill -USR1 $(pgrep -x AllumeCompanion)` behaves like pressing ⌘⇧P.
+        // Test hook: `kill -USR1 $(pgrep -x AllumeCompanion)` behaves like pressing ⌘K.
         signal(SIGUSR1, SIG_IGN)
         usr1Source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
         usr1Source?.setEventHandler { [weak self] in self?.readSelectionAndShow() }
@@ -79,6 +81,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NotificationCenter.default.addObserver(forName: .togglePanel, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.overlay.togglePanel() }
+        }
+    }
+
+    private func updateHotKey(allumeActive: Bool) {
+        guard let hotKey else { return }
+        let wantRegistered = allumeActive || overlay.panel.isKeyWindow
+        if wantRegistered != hotKey.isRegistered {
+            wantRegistered ? hotKey.register() : hotKey.unregister()
+            Log.info("hotkey ⌘K \(wantRegistered ? "registered" : "unregistered")")
         }
     }
 
@@ -129,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "Allume Companion")
         let menu = NSMenu()
-        menu.addItem(withTitle: "读取选中并打开面板  ⌘⇧P", action: #selector(menuRead), keyEquivalent: "")
+        menu.addItem(withTitle: "读取选中并打开面板  ⌘K", action: #selector(menuRead), keyEquivalent: "")
         menu.addItem(withTitle: "打开辅助功能设置…", action: #selector(openAXSettings), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出 Allume Companion", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")

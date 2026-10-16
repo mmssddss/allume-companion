@@ -13,7 +13,7 @@ struct PillView: View {
             if !state.selectedCardIds.isEmpty {
                 Text("\(state.selectedCardIds.count) 张").foregroundStyle(.secondary)
             }
-            Text("⌘⇧P").font(.caption).foregroundStyle(.tertiary)
+            Text("⌘K").font(.caption).foregroundStyle(.tertiary)
         }
         .font(.system(size: 12, weight: .medium))
         .padding(.horizontal, 12)
@@ -48,7 +48,7 @@ struct CommandPanelView: View {
             commands
             Divider()
             output
-            Text("Esc 关闭 · ⌘⇧P 重新读取选中").font(.caption2).foregroundStyle(.tertiary)
+            Text("Esc 关闭 · ⌘K 重新读取选中").font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(14)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

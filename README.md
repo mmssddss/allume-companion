@@ -1,6 +1,6 @@
 # Allume Companion
 
-贴在 Allume（原 Muse）白板窗口上的伴生浮层：显示当前白板标题，按 **⌘⇧P** 读取当前选中的卡片，
+贴在 Allume（原 Muse）白板窗口上的伴生浮层：显示当前白板标题，在 Allume 里按 **⌘K** 读取当前选中的卡片，
 在命令面板里对它们批量执行 `allume` CLI 命令。所有对 Allume 的操作都走
 `/usr/local/bin/allume`，不截屏、不模拟点击；唯一模拟的按键是发给 Allume 的 ⌘C。
 
@@ -17,7 +17,7 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 - 签名：优先用钥匙串里的 Apple Development / Developer ID 证书（可用 `CODESIGN_IDENTITY` 指定），
   找不到就 ad-hoc。**ad-hoc 签名每次重新构建都会让 macOS 丢掉辅助功能授权**，要重新勾选。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
-- 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘⇧P；`kill -USR2 ...` 等于点"排成 N 列"
+- 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘K；`kill -USR2 ...` 等于点"排成 N 列"
   （启动时设 `ALLUME_USR2=resize` 或 `delete` 可改成另两个按钮）；`kill -INFO ...` 等于点"撤销"；
   `ALLUME_SELECT_IDS=a,b,c open build/AllumeCompanion.app` 启动时直接预设选中的卡片 id，不经过 ⌘C；
   用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志。
@@ -27,11 +27,12 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 
 | 权限 | 用途 | 没有会怎样 |
 |---|---|---|
-| 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，浮层才能贴上去；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C | 浮层不显示，⌘⇧P 读不到选中 |
+| 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，浮层才能贴上去；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C | 浮层不显示，⌘K 读不到选中 |
 | Allume → Preferences → Command Line 里的读写模式 | `card-gather` / `card-move` / `delete` 都是写操作 | 面板里显示 `allume card-gather is unavailable: the CLI is in read-only mode`。如果设置里已经是 read-write 还报这个，见下面"CLI 为什么要用 open 启动" |
 
 首次启动会弹系统提示；也可以从菜单栏图标 → "打开辅助功能设置…"。不需要"输入监控"：全局快捷键用的是
-Carbon `RegisterEventHotKey`，不需要额外权限。
+Carbon `RegisterEventHotKey`，不需要额外权限。注册了的全局快捷键会在所有 app 里吞掉这个按键，
+所以 ⌘K 只在 Allume 是前台 app（或命令面板是 key window）时注册，切到别的 app 就注销，别的 app 的 ⌘K 不受影响。
 
 ## 工作原理
 
@@ -79,7 +80,7 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 同一次 ⌘C 还会放一个 `com.allume.copyable.selection` item（selectionId、cardInfos、chainInfos、selectionPath）
 和每张卡的 `public.url` 分享链接，这些目前没用到。参考脚本：`~/.claude/skills/allume/scripts/selection.py`。
 
-⌘⇧P 的流程（`SelectionReader.swift`）：
+⌘K 的流程（`SelectionReader.swift`）：
 
 1. 把当前剪贴板的所有 item/类型/数据快照下来；
 2. 用 `CGEvent.postToPid` 给 Allume 进程发 ⌘C（键码 8 + ⌘，一个按下一个抬起）；
@@ -157,7 +158,7 @@ Sources/AllumeCompanion/
   AllumeTracker.swift              AXObserver 跟踪 Allume 窗口位置/激活/标题（含 1s 兜底轮询）
   AXDump.swift                     调试：把 Allume 的 AX 树写进日志
   SelectionReader.swift            剪贴板快照 → ⌘C → 解析 → 恢复
-  HotKey.swift                     Carbon 全局快捷键 ⌘⇧P
+  HotKey.swift                     Carbon 全局快捷键 ⌘K（只在 Allume 前台时注册）
   AllumeCLI.swift                  经 open -W 调 allume（原因见上）
   CommandRunner.swift              三条命令 + 一层撤销（执行前记 id / frame）
   OverlayController.swift          两个 NSPanel（标题胶囊 + 命令面板）及定位
