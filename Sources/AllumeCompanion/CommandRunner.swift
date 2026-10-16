@@ -114,16 +114,17 @@ final class CommandRunner {
          "--width", Self.num(f.width), "--height", Self.num(f.height)]
     }
 
-    /// Runs a frame-changing step: snapshot first, run `body`, and if it did anything, make the
-    /// snapshot the undo entry. Cards whose frame could not be read are not restorable; say so.
-    private func frameStep(label: String, _ body: () async -> Bool) async {
+    /// Runs a frame-changing step: snapshot first, run `body` with the snapshot, and if it did
+    /// anything, make the snapshot the undo entry. Cards whose frame could not be read are not
+    /// restorable; say so.
+    private func frameStep(label: String, _ body: ([String: Frame]) async -> Bool) async {
         let ids = state.selectedCardIds
         let before = await snapshotFrames(ids)
         let missing = ids.filter { before[$0] == nil }
         if !missing.isEmpty {
             state.appendLog("警告：\(missing.count) 张卡片读不到位置，撤销时不会恢复它们")
         }
-        guard await body() else { return }
+        guard await body(before) else { return }
         guard !before.isEmpty else { state.appendLog("没有可撤销的记录"); return }
         undoEntry = UndoEntry(label: label,
                               commands: ids.compactMap { id in before[id].map { moveBack(id, to: $0) } },
@@ -133,20 +134,31 @@ final class CommandRunner {
 
     // MARK: - Commands
 
+    /// Lays the selection out as a grid anchored at the selection's top-left corner (the smallest
+    /// x and smallest y among the selected cards), not at the board origin, and in reading order
+    /// (by y, then x) so the grid keeps the cards' visual order. Falls back to (80, 80) when no
+    /// frame could be read.
     func gatherGrid(columns: Int) async {
         await guarded {
             let cols = max(1, columns)
-            await frameStep(label: "排成 \(cols) 列") {
-                let ids = state.selectedCardIds.joined(separator: ",")
-                return await exec(["card-gather", "--ids", ids, "--layout", "grid", "--columns", "\(cols)",
-                                   "--x", "80", "--y", "80", "--spacing", "40"]).ok
+            await frameStep(label: "排成 \(cols) 列") { frames in
+                let known = state.selectedCardIds.compactMap { id in frames[id].map { (id, $0) } }
+                let originX = known.map(\.1.x).min() ?? 80
+                let originY = known.map(\.1.y).min() ?? 80
+                let ordered = known.sorted { a, b in
+                    abs(a.1.y - b.1.y) > 1 ? a.1.y < b.1.y : a.1.x < b.1.x
+                }.map(\.0)
+                let ids = ordered + state.selectedCardIds.filter { !ordered.contains($0) }
+                return await exec(["card-gather", "--ids", ids.joined(separator: ","), "--layout", "grid",
+                                   "--columns", "\(cols)", "--x", Self.num(originX), "--y", Self.num(originY),
+                                   "--spacing", "40"]).ok
             }
         }
     }
 
     func resizeAll(width: Int = 200, height: Int = 150) async {
         await guarded {
-            await frameStep(label: "统一尺寸 \(width)×\(height)") {
+            await frameStep(label: "统一尺寸 \(width)×\(height)") { _ in
                 var any = false
                 for id in state.selectedCardIds {
                     if await exec(["card-move", "--id", id, "--width", "\(width)", "--height", "\(height)"]).ok { any = true }
