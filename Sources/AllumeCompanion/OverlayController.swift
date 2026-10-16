@@ -22,7 +22,9 @@ final class OverlayController {
     let panel: OverlayPanel
     private var window: AllumeTracker.WindowInfo?
 
-    static let panelSize = CGSize(width: 560, height: 330)
+    static let panelSize = CGSize(width: 560, height: 400)
+    /// Height the view last asked for (search row + visible rows + footer).
+    private var contentHeight: CGFloat = panelSize.height
     static let topInset: CGFloat = 52   // just under Allume's title bar / toolbar
 
     init(state: AppState, runner: CommandRunner) {
@@ -32,6 +34,15 @@ final class OverlayController {
         panel.onEscape = { [weak self] in self?.hidePanel() }
         NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.hidePanel() }
+        }
+        NotificationCenter.default.addObserver(forName: .panelHeight, object: nil, queue: .main) { [weak self] note in
+            guard let h = note.object as? CGFloat else { return }
+            Task { @MainActor in
+                guard let self, self.contentHeight != h else { return }
+                self.contentHeight = h
+                if self.panel.isVisible, let w = self.window { self.panel.setFrame(self.panelFrame(for: w.frame), display: true) }
+                Log.info("panel height → \(h), frame \(self.panel.frame)")
+            }
         }
     }
 
@@ -76,10 +87,12 @@ final class OverlayController {
         Log.info("panel hidden")
     }
 
+    /// Anchored at the top (just under Allume's title bar), so growing or shrinking only moves
+    /// the bottom edge; never taller than the space left in the Allume window.
     private func panelFrame(for w: CGRect) -> CGRect {
         let s = Self.panelSize
         let top = w.maxY - Self.topInset
-        let height = min(s.height, max(120, top - w.minY - 16))
+        let height = min(contentHeight, max(120, top - w.minY - 16))
         return CGRect(x: w.midX - s.width / 2, y: top - height, width: s.width, height: height)
     }
 }

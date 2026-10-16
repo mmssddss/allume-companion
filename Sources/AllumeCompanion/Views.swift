@@ -3,6 +3,20 @@ import SwiftUI
 extension Notification.Name {
     /// Posted by OverlayController when the panel is shown: the field refocuses and clears.
     static let panelShown = Notification.Name("AllumeCompanion.panelShown")
+    /// Posted by the view with the height it wants (`object` is a CGFloat); the panel resizes
+    /// from its top edge so the search row never moves and only the list scrolls.
+    static let panelHeight = Notification.Name("AllumeCompanion.panelHeight")
+}
+
+enum PanelMetrics {
+    static let searchRow: CGFloat = 62
+    static let row: CGFloat = 46
+    static let listPadding: CGFloat = 16
+    static let footer: CGFloat = 30
+    static let maxRows = 6
+    static func height(forRows n: Int) -> CGFloat {
+        searchRow + 1 + CGFloat(max(1, min(n, maxRows))) * row + listPadding + footer
+    }
 }
 
 /// Spotlight-style command panel: a stack of the selected cards on the left, a command field,
@@ -37,6 +51,12 @@ struct CommandPanelView: View {
             fieldFocused = true
         }
         .onChange(of: query) { _, _ in selectedIndex = 0 }
+        .onAppear { postHeight() }
+        .onChange(of: matches.count) { _, _ in postHeight() }
+    }
+
+    private func postHeight() {
+        NotificationCenter.default.post(name: .panelHeight, object: PanelMetrics.height(forRows: matches.count))
     }
 
     // MARK: - Search row
@@ -55,7 +75,7 @@ struct CommandPanelView: View {
             if state.isRunning { ProgressView().controlSize(.small) }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .frame(height: PanelMetrics.searchRow)
     }
 
     private var placeholder: String {
@@ -66,18 +86,30 @@ struct CommandPanelView: View {
 
     // MARK: - Results
 
+    /// The only scrolling part: at most `maxRows` rows are visible, the selected row is kept in view.
     private var results: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if matches.isEmpty {
-                Text("没有匹配的命令").foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.vertical, 8)
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if matches.isEmpty {
+                        Text("没有匹配的命令").foregroundStyle(.tertiary)
+                            .padding(.horizontal, 10).frame(height: PanelMetrics.row)
+                    }
+                    ForEach(Array(matches.enumerated()), id: \.element.id) { i, m in
+                        ResultRow(match: m, selected: i == selectedIndex)
+                            .frame(height: PanelMetrics.row)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedIndex = i; runSelected() }
+                            .id(m.id)
+                    }
+                }
+                .padding(8)
             }
-            ForEach(Array(matches.enumerated()), id: \.element.id) { i, m in
-                ResultRow(match: m, selected: i == selectedIndex)
-                    .contentShape(Rectangle())
-                    .onTapGesture { selectedIndex = i; runSelected() }
+            .frame(height: CGFloat(max(1, min(matches.count, PanelMetrics.maxRows))) * PanelMetrics.row + PanelMetrics.listPadding)
+            .onChange(of: selectedIndex) { _, i in
+                if matches.indices.contains(i) { proxy.scrollTo(matches[i].id, anchor: nil) }
             }
         }
-        .padding(8)
     }
 
     private var footer: some View {
@@ -91,7 +123,7 @@ struct CommandPanelView: View {
             Text("↑↓ 选择 · ⏎ 执行 · Esc 关闭").font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 14)
-        .padding(.bottom, 10)
+        .frame(height: PanelMetrics.footer)
     }
 
     // MARK: - Actions
@@ -129,7 +161,7 @@ private struct ResultRow: View {
             if selected { Text("⏎").font(.caption).foregroundStyle(Color.white.opacity(0.8)) }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .frame(maxHeight: .infinity)
         .foregroundStyle(selected ? Color.white : Color.primary)
         .background(selected ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 8))
     }
