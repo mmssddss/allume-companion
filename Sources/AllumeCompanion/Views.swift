@@ -1,8 +1,12 @@
 import SwiftUI
 
 extension Notification.Name {
-    /// Posted by OverlayController when the panel is shown: the field refocuses and clears.
+    /// Posted by OverlayController when the panel is shown: the field refocuses (and clears, in
+    /// case `panelReset` did not run).
     static let panelShown = Notification.Name("AllumeCompanion.panelShown")
+    /// Posted by OverlayController right after the panel is hidden: the field clears and the
+    /// selection goes back to the first row, so the next show has nothing to re-layout.
+    static let panelReset = Notification.Name("AllumeCompanion.panelReset")
     /// Posted by the view with the height it wants (`object` is a CGFloat); the panel resizes
     /// from its top edge so the search row never moves and only the list scrolls.
     static let panelHeight = Notification.Name("AllumeCompanion.panelHeight")
@@ -46,9 +50,13 @@ struct CommandPanelView: View {
         .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary))
         .onAppear { fieldFocused = true }
         .onReceive(NotificationCenter.default.publisher(for: .panelShown)) { _ in
-            query = ""
-            selectedIndex = 0
+            if !query.isEmpty { query = "" }
+            if selectedIndex != 0 { selectedIndex = 0 }
             fieldFocused = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .panelReset)) { _ in
+            if !query.isEmpty { query = "" }
+            if selectedIndex != 0 { selectedIndex = 0 }
         }
         .onChange(of: query) { _, _ in selectedIndex = 0 }
         .onAppear { postHeight() }
@@ -65,6 +73,8 @@ struct CommandPanelView: View {
         HStack(spacing: 12) {
             if !state.selectedCardIds.isEmpty {
                 CardStackView(cards: state.selectedCards, count: state.selectedCardIds.count)
+            } else if state.selectionPending {
+                CardStackPlaceholder()
             }
             TextField(placeholder, text: $query)
                 .textFieldStyle(.plain)
@@ -195,6 +205,19 @@ struct CardStackView: View {
         }
         .frame(width: size.width + 14, height: size.height + 8, alignment: .bottomLeading)
         .padding(.top, 4)
+    }
+}
+
+/// Stands where the card stack will be while the clipboard round trip is in flight (the panel
+/// is already up), so the field does not jump right when the cards arrive 30–100 ms later.
+/// Same footprint as `CardStackView`. Gone when nothing turns out to be selected.
+private struct CardStackPlaceholder: View {
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6)
+            .strokeBorder(.quaternary, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+            .frame(width: 60, height: 42)
+            .frame(width: 60 + 14, height: 42 + 8, alignment: .bottomLeading)
+            .padding(.top, 4)
     }
 }
 

@@ -86,33 +86,21 @@ final class CommandRunner {
     /// Current frames of `ids`: from the board model when it holds all of them and was loaded
     /// within `snapshotMaxAge`, otherwise freshly read (see `fetchRows`).
     private func snapshotFrames(_ ids: [String]) async -> [String: Frame] {
-        if let model = boardModel, let age = model.age, age <= Self.snapshotMaxAge,
-           let rows = rowsFromModel(ids) {
-            lastRows = rows
-            state.appendLog("位置来自当前白板模型（\(String(format: "%.1f", age)) 秒前读取），已记录 \(rows.count)/\(ids.count) 张（撤销用）")
-            return rows.mapValues(\.frame)
+        if let hit = boardModel?.lookup(ids), hit.age <= Self.snapshotMaxAge {
+            lastRows = hit.rows
+            state.appendLog("位置来自白板模型（\(String(format: "%.1f", hit.age)) 秒前读取），已记录 \(hit.rows.count)/\(ids.count) 张（撤销用）")
+            return hit.rows.mapValues(\.frame)
         }
         let rows = await fetchRows(ids)
         state.appendLog("已记录 \(rows.count)/\(ids.count) 张卡片的位置和尺寸（撤销用）")
         return rows.mapValues(\.frame)
     }
 
-    /// Every one of `ids` from the board model, or nil if any is missing (another board, or a
-    /// card newer than the model).
-    private func rowsFromModel(_ ids: [String]) -> [String: CardRow]? {
-        guard let model = boardModel, model.boardId != nil, !ids.isEmpty else { return nil }
-        var out: [String: CardRow] = [:]
-        for id in ids {
-            guard let row = model.card(id) else { return nil }
-            out[id] = row
-        }
-        return out
-    }
-
     /// Current rows of `ids`, read with one `board-content` per board (plus `card-content` for
     /// the first card of a board we have not seen, and for any card the board listing misses).
     /// The board model and index already know most scope → board id pairs, so the
-    /// `card-content` step is usually skipped.
+    /// `card-content` step is usually skipped. Every board read is handed to the model, so the
+    /// next ⌘K on the same cards is answered from memory.
     private func fetchRows(_ ids: [String]) async -> [String: CardRow] {
         var frames: [String: CardRow] = [:]
         let scopes = ids.reduce(into: [String]()) { acc, id in
@@ -121,7 +109,7 @@ final class CommandRunner {
         }
         for scope in scopes {
             let scopeIds = ids.filter { $0.hasPrefix(scope + ":") }
-            if boardIdByScope[scope] == nil, let known = knownBoardId(scope: scope) {
+            if boardIdByScope[scope] == nil, let known = boardModel?.boardId(forScope: scope) {
                 boardIdByScope[scope] = known
             }
             if boardIdByScope[scope] == nil, let first = scopeIds.first, let row = await readCard(first) {
@@ -134,7 +122,9 @@ final class CommandRunner {
             if let boardId = boardIdByScope[scope] {
                 let r = await exec(["board-content", boardId, "--format", "json"], showStdout: false)
                 if r.ok {
-                    for row in decodeRows(r.stdout) where scopeIds.contains(row.id) { frames[row.id] = row }
+                    let rows = decodeRows(r.stdout)
+                    for row in rows where scopeIds.contains(row.id) { frames[row.id] = row }
+                    boardModel?.adopt(boardId: boardId, rows: rows)
                 } else {
                     boardIdByScope[scope] = nil // stale cache; fall back to card-content below
                 }
@@ -147,19 +137,13 @@ final class CommandRunner {
         return frames
     }
 
-    /// Board document id for a card-id scope prefix, from the board model or the index, without
-    /// a CLI call; nil when neither knows.
-    private func knownBoardId(scope: String) -> String? {
-        if let model = boardModel, let id = model.boardId, id.hasPrefix(scope + ":") { return id }
-        return boardModel?.index.entries.first { $0.id.hasPrefix(scope + ":") }?.id
-    }
-
     /// Fills `state.selectedCards` (titles, kinds, text excerpts) for the panel's card stack,
     /// then fetches thumbnails for the cards the stack shows (the first `CardStackView.visible`),
     /// each landing in `state.selectedCards` as it arrives so the panel never waits for them.
     ///
-    /// Source: the board model when it holds every selected card (no CLI call); otherwise
-    /// (cards on another board, or the model not loaded yet) `fetchRows` as before.
+    /// Source: the board model when it holds every selected card (no CLI call: the current board
+    /// or one of the other boards it keeps); otherwise (a board it has not seen, or not loaded
+    /// yet) `fetchRows`, which hands what it reads to the model.
     func describeSelection() async {
         let ids = state.selectedCardIds
         state.selectedCards = ids.map { CardSummary(id: $0, title: "", kind: "", thumbnail: thumbnails.cached($0)) }
@@ -167,10 +151,10 @@ final class CommandRunner {
         if state.selectionFromAllume { boardModel?.noteSelection(ids: ids) }
         let rows: [String: CardRow]
         let source: String
-        if let fromModel = rowsFromModel(ids) {
-            rows = fromModel
-            lastRows = fromModel
-            source = "board model (\(String(format: "%.1f", boardModel?.age ?? 0)) s old)"
+        if let hit = boardModel?.lookup(ids) {
+            rows = hit.rows
+            lastRows = hit.rows
+            source = "board model (\(String(format: "%.1f", hit.age)) s old)"
         } else {
             source = boardModel?.boardId == nil ? "CLI (board model not loaded)" : "CLI (cards not in board model)"
             rows = await fetchRows(ids)
@@ -198,7 +182,7 @@ final class CommandRunner {
     /// them (no CLI call). Thumbnails already shown are kept.
     func refreshSelectionFromModel() {
         let ids = state.selectedCardIds
-        guard !ids.isEmpty, let rows = rowsFromModel(ids) else { return }
+        guard !ids.isEmpty, let rows = boardModel?.lookup(ids)?.rows else { return }
         lastRows = rows
         let updated = ids.map { id -> CardSummary in
             let row = rows[id]!

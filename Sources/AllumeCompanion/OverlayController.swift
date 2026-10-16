@@ -67,26 +67,60 @@ final class OverlayController {
 
     var isPanelVisible: Bool { panel.isVisible }
 
-    /// Called by the tracker whenever Allume's window moves/resizes/activates.
+    /// Orders the panel in once, fully transparent and off-screen, and out again on the next
+    /// run-loop turn: SwiftUI's first layout and the window server's first composite then happen
+    /// at launch instead of on the first ⌘K (measured ~50 ms for the first show vs ~10 ms after).
+    func prewarm() {
+        panel.alphaValue = 0
+        panel.setFrame(CGRect(x: -4000, y: -4000, width: Self.panelSize.width, height: Self.panelSize.height), display: true)
+        panel.orderFrontRegardless()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.panel.orderOut(nil)
+            self.panel.alphaValue = 1
+        }
+    }
+
+    /// Called by the tracker whenever Allume's window moves/resizes/activates. A hidden panel
+    /// follows the window too (laid out now, off-screen), so the next `showPanel` is a bare
+    /// `orderFront` even right after launch or after Allume was resized.
     func update(window: AllumeTracker.WindowInfo?) {
         self.window = window
         guard let window, window.isActive || panel.isKeyWindow else {
             hidePanel()
+            if let w = window { place(for: w.frame) }
             return
         }
-        if panel.isVisible { panel.setFrame(panelFrame(for: window.frame), display: true) }
+        if panel.isVisible { panel.setFrame(panelFrame(for: window.frame), display: true) } else { place(for: window.frame) }
+    }
+
+    /// Moves the hidden panel to where it would open; redraws only when the size changed.
+    private func place(for windowFrame: CGRect) {
+        let frame = panelFrame(for: windowFrame)
+        guard panel.frame != frame else { return }
+        panel.setFrame(frame, display: panel.frame.size != frame.size)
     }
 
     /// `expectedRows` sizes the first frame right away, so the panel does not pop up at the
-    /// previous height and then jump once SwiftUI reports the real one.
+    /// previous height and then jump once SwiftUI reports the real one. Usually `rearm` already
+    /// left the panel at that size with the field cleared, so this is one `orderFront`
+    /// (~5–10 ms); a relayout (~10–20 ms) only happens when the Allume window changed size.
     func showPanel(expectedRows: Int? = nil) {
         guard let window else { return }
         if let n = expectedRows { contentHeight = PanelMetrics.height(forRows: n) }
         anchorHeight = contentHeight
-        panel.setFrame(panelFrame(for: window.frame), display: true)
+        let t0 = Date()
+        let frame = panelFrame(for: window.frame)
+        var relaid = false
+        if panel.frame != frame {
+            relaid = panel.frame.size != frame.size
+            panel.setFrame(frame, display: relaid)
+        }
+        let t1 = Date()
         panel.makeKeyAndOrderFront(nil)
+        let t2 = Date()
         NotificationCenter.default.post(name: .panelShown, object: nil)
-        Log.info("panel shown at \(panel.frame)")
+        Log.info("panel shown at \(panel.frame); setFrame \(Int(t1.timeIntervalSince(t0) * 1000)) ms\(relaid ? " (relaid)" : ""), orderFront \(Int(t2.timeIntervalSince(t1) * 1000)) ms")
     }
 
     /// Test hook: renders the panel's content view into a PNG at `path`.
@@ -102,6 +136,17 @@ final class OverlayController {
         guard panel.isVisible else { return }
         panel.orderOut(nil)
         Log.info("panel hidden")
+        rearm()
+    }
+
+    /// Puts the hidden panel into the state the next ⌘K wants: field cleared, every command
+    /// listed, frame at that height. Done now, while nobody is waiting, so `showPanel` has
+    /// nothing left to lay out (see its timings).
+    private func rearm() {
+        NotificationCenter.default.post(name: .panelReset, object: nil)
+        contentHeight = PanelMetrics.height(forRows: CommandCatalog.specs.count)
+        anchorHeight = contentHeight
+        if let w = window { panel.setFrame(panelFrame(for: w.frame), display: true) }
     }
 
     /// Anchored at the top (just under Allume's title bar), so growing or shrinking only moves

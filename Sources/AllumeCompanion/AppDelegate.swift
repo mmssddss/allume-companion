@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         boardModel.onLoaded = { [weak self] in self?.runner.refreshSelectionFromModel() }
         runner.boardModel = boardModel
         boardIndex.refresh(reason: "launch")
+        overlay.prewarm()
         setupStatusItem()
         requestAccessibility()
 
@@ -80,6 +81,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Task { await self.boardModel.refresh(reason: "panel opened") }
                         await self.runner.describeSelection()
                         stats.described(self.state.selectedCards)
+                        await self.boardModel.refreshOthers(containing: self.state.selectedCardIds, reason: "panel opened")
                     }
                 }
             } else {
@@ -169,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state.selectionPending = true
             state.selectedCardIds = []
             state.selectedCards = []
-            tracker.refresh()
+            tracker.refresh()   // 1–2 ms: the AX round trip is not where ⌘K's time goes
             overlay.update(window: tracker.currentWindow())
             overlay.showPanel(expectedRows: CommandCatalog.specs.count)
             stats.panelShown()
@@ -189,9 +191,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state.selectionPending = false
             // The panel is one of the model's refresh points; it runs alongside describing
             // the selection (which uses the model as it is now) and re-describes once done.
+            // Boards the selection is on besides the current one are reloaded afterwards, so
+            // a selection inside an inline sub-board is also fresh for the undo snapshot.
             Task { await boardModel.refresh(reason: "panel opened") }
             await runner.describeSelection()
             stats.described(state.selectedCards)
+            await boardModel.refreshOthers(containing: state.selectedCardIds, reason: "panel opened")
         }
     }
 

@@ -53,6 +53,17 @@ final class BoardModel {
     /// Rows in the order `board-content` returned them.
     private(set) var rows: [BoardCard] = []
     private(set) var loadedAt: Date?
+    /// Boards other than the current one that a selection turned out to be on: Allume lets you
+    /// select cards inside a sub-board shown inline on the parent canvas, and the window title
+    /// stays the parent's. Keeping them means the next ⌘K on those cards needs no CLI call.
+    /// At most `maxOtherBoards`, the least recently loaded evicted first.
+    private struct Loaded {
+        var rows: [BoardCard]
+        var cards: [String: BoardCard]
+        var loadedAt: Date
+    }
+    private var others: [String: Loaded] = [:]
+    static let maxOtherBoards = 6
     /// Whether Allume is frontmost; the periodic refresh only runs while it is.
     var allumeActive = false
     /// Called on the main actor after every successful load (the panel re-reads titles from it).
@@ -82,9 +93,84 @@ final class BoardModel {
     /// Scope prefix (`<prefix>:`) shared by the board's document id and its cards' ids.
     var scopePrefix: String? { boardId.map { String($0.prefix { $0 != ":" }) } }
 
-    /// True when every id belongs to the loaded board's scope (not when it is in `cards`:
-    /// a card created after the last load is on the board but not in the model yet).
     func card(_ id: String) -> BoardCard? { cards[id] }
+
+    /// Every one of `ids` from the current board or one of the other boards held, with the age
+    /// of the oldest load they came from; nil when any id is unknown (a board not held, or a
+    /// card created after its board was last loaded).
+    func lookup(_ ids: [String]) -> (rows: [String: BoardCard], age: TimeInterval)? {
+        guard !ids.isEmpty else { return nil }
+        var out: [String: BoardCard] = [:]
+        var oldest = Date.distantFuture
+        for id in ids {
+            if let row = cards[id], let loadedAt {
+                out[id] = row
+                oldest = min(oldest, loadedAt)
+            } else if let hit = others.values.lazy.compactMap({ b in b.cards[id].map { (b.loadedAt, $0) } }).first {
+                out[id] = hit.1
+                oldest = min(oldest, hit.0)
+            } else {
+                return nil
+            }
+        }
+        return (out, Date().timeIntervalSince(oldest))
+    }
+
+    /// Document id of the board whose cards carry the scope prefix `scope`: the current board,
+    /// one of the other boards held, or what the index knows; nil when none does.
+    func boardId(forScope scope: String) -> String? {
+        if let boardId, boardId.hasPrefix(scope + ":") { return boardId }
+        if let id = others.keys.first(where: { $0.hasPrefix(scope + ":") }) { return id }
+        return index.entries.first { $0.id.hasPrefix(scope + ":") }?.id
+    }
+
+    /// Rows someone else just read with `board-content` (CommandRunner.fetchRows): keep them, so
+    /// the read is not repeated. For the current board this is a load like any other.
+    func adopt(boardId id: String, rows loaded: [BoardCard]) {
+        if id == boardId {
+            store(loaded)
+            Log.info("board model: \"\(title)\" adopted \(loaded.count) cards read for the selection")
+            onLoaded?()
+            return
+        }
+        storeOther(id, rows: loaded)
+        Log.info("board model: holding \(others.count) other board(s); adopted \(loaded.count) cards of \(id)")
+        onLoaded?()
+    }
+
+    /// Reloads, in the background, the other boards `ids` are on (not the current one, which
+    /// `refresh` covers), skipping any loaded within the last second (just adopted).
+    func refreshOthers(containing ids: [String], reason: String) async {
+        let scopes = Set(ids.map { String($0.prefix { $0 != ":" }) })
+        for scope in scopes {
+            if let boardId, boardId.hasPrefix(scope + ":") { continue }
+            guard let id = boardId(forScope: scope) else { continue }
+            if let held = others[id], Date().timeIntervalSince(held.loadedAt) < 1 { continue }
+            let t0 = Date()
+            let r = await AllumeCLI.run(["board-content", id, "--format", "json"], background: true)
+            guard r.ok else {
+                Log.info("board model: other board \(id) failed (\(reason)): \(r.stderr.split(separator: "\n").first ?? "")")
+                continue
+            }
+            let loaded = BoardCard.decodeRows(r.stdout)
+            storeOther(id, rows: loaded)
+            Log.info("board model: other board \(id) loaded \(loaded.count) cards (\(reason), \(Int(Date().timeIntervalSince(t0) * 1000)) ms)")
+            onLoaded?()
+        }
+    }
+
+    private func store(_ loaded: [BoardCard]) {
+        rows = loaded
+        cards = Dictionary(loaded.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        loadedAt = Date()
+    }
+
+    private func storeOther(_ id: String, rows loaded: [BoardCard]) {
+        others[id] = Loaded(rows: loaded, cards: Dictionary(loaded.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a }), loadedAt: Date())
+        while others.count > Self.maxOtherBoards, let oldest = others.min(by: { $0.value.loadedAt < $1.value.loadedAt }) {
+            others[oldest.key] = nil
+        }
+    }
 
     // MARK: - Which board
 
@@ -119,8 +205,13 @@ final class BoardModel {
     private func switchTo(_ id: String, reason: String) {
         guard id != boardId else { return }
         boardId = id
-        cards = [:]; rows = []; loadedAt = nil
         prewarm?.cancel(); prewarm = nil
+        if let held = others.removeValue(forKey: id) {
+            // Already held as "another board": start from that copy instead of nothing.
+            rows = held.rows; cards = held.cards; loadedAt = held.loadedAt
+        } else {
+            cards = [:]; rows = []; loadedAt = nil
+        }
         Log.info("board model: \"\(title)\" → \(id) (\(reason))")
         Task { await refresh(reason: reason) }
     }
@@ -168,9 +259,7 @@ final class BoardModel {
             return
         }
         let loaded = BoardCard.decodeRows(r.stdout)
-        rows = loaded
-        cards = Dictionary(loaded.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        loadedAt = Date()
+        store(loaded)
         Log.info("board model: \"\(title)\" loaded \(loaded.count) cards (\(reason), \(ms) ms)")
         onLoaded?()
         startPrewarm()
