@@ -14,8 +14,9 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 
 - `scripts/build-app.sh [debug|release]` 只构建打包，不启动。它把 `Resources/Info.plist`（含 `LSUIElement`）套在
   SwiftPM 产物外面做成 `.app`。
-- 签名：优先用钥匙串里的 Apple Development / Developer ID 证书（可用 `CODESIGN_IDENTITY` 指定），
-  找不到就 ad-hoc。**ad-hoc 签名每次重新构建都会让 macOS 丢掉辅助功能授权**，要重新勾选。
+- 签名：优先用钥匙串里的 Developer ID Application 证书，其次 Apple Development（可用 `CODESIGN_IDENTITY` 指定），
+  找不到就 ad-hoc。辅助功能授权绑定签名证书：**换证书或 ad-hoc 重签都会让 macOS 丢掉授权**，要在系统设置里重新勾选；
+  日常构建和 release.sh 都用 Developer ID 就不会反复要。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
 - 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘K（预设选中时也会重新从模型/CLI 补标题并打印 ⌘K 统计）；`kill -USR2 ...` 等于点"排成 N 列"
   （`ALLUME_USR2="小"` 这类值会像在输入框里打字一样经过命令匹配）；`kill -INFO ...` 等于点"撤销"；

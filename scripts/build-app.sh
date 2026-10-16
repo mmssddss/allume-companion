@@ -17,8 +17,11 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 echo -n 'APPL????' > "$APP/Contents/PkgInfo"
 
 # Sign with a stable identity when one exists so macOS keeps the Accessibility
-# grant across rebuilds; ad-hoc signing re-prompts after every build.
-IDENTITY="${CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development|Developer ID Application/ {print $2; exit}')}"
+# grant across rebuilds; ad-hoc signing re-prompts after every build. Prefer Developer ID
+# (falling back to Apple Development) so dev builds and release.sh builds share one identity:
+# TCC ties the grant to the signing certificate, and switching identities re-prompts.
+IDENTITY="${CODESIGN_IDENTITY:-$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Developer ID Application/ {print $2; exit}')}"
+[[ -n "$IDENTITY" ]] || IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ {print $2; exit}')"
 if [[ -n "$IDENTITY" ]]; then
   codesign --force --sign "$IDENTITY" --identifier com.maverickli.allume-companion "$APP" >/dev/null
   echo "signed with: $IDENTITY"
