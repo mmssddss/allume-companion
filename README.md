@@ -25,6 +25,21 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
   用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志。
 - 它是菜单栏常驻 app（无 Dock 图标），从菜单栏图标里退出。
 
+## 发布（Release）
+
+```bash
+scripts/release.sh 0.0.1            # 打包到 dist/AllumeCompanion-0.0.1.zip，不发布
+scripts/release.sh 0.0.1 --publish  # 另外打 tag v0.0.1、push、建 GitHub Release 并上传 zip
+```
+
+脚本做的事：把版本号写进 `Resources/Info.plist`（`CFBundleShortVersionString` = 版本，`CFBundleVersion` = commit 数）并提交；
+用 **Developer ID Application** 证书签名（hardened runtime + 时间戳），`ditto` 打 zip；`--publish` 时用 `gh` 建 Release，
+说明用 `--generate-notes` 自动生成。用户下载后把 `.app` 拖进"应用程序"运行即可。
+
+公证（notarization）：设 `NOTARY_PROFILE=<keychain profile>` 后脚本会 `notarytool submit --wait` 并 staple；profile 用
+`xcrun notarytool store-credentials <名字>` 配一次（需要 App 专用密码或 App Store Connect API key）。没公证的版本，
+下载者第一次要右键 → 打开（或 `xattr -d com.apple.quarantine`），Gatekeeper 才放行。
+
 ## 需要的权限
 
 | 权限 | 用途 | 没有会怎样 |
