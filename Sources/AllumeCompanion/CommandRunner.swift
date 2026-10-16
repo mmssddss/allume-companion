@@ -25,9 +25,14 @@ final class CommandRunner {
         let id: String
         let kind: String?
         let title: String?
+        let createdAt: String?      // ISO-8601 with Z, so string order is time order
         let frame: Frame
         let parentDocumentId: String?
     }
+
+    /// Rows cached by the last `fetchRows`, so `gather` can sort by title/createdAt without
+    /// a second round of CLI calls.
+    private var lastRows: [String: CardRow] = [:]
 
     private struct UndoEntry {
         let label: String
@@ -112,6 +117,7 @@ final class CommandRunner {
                 if let row = await readCard(id) { frames[id] = row }
             }
         }
+        lastRows = frames
         return frames
     }
 
@@ -131,7 +137,7 @@ final class CommandRunner {
     /// Dispatches a command picked in the panel.
     func run(_ kind: CommandKind) async {
         switch kind {
-        case .gather(let layout, let columns): await gather(layout: layout, columns: columns)
+        case .gather(let layout, let columns, let order): await gather(layout: layout, columns: columns, order: order)
         case .resize(let w, let h): await resizeAll(width: w, height: h)
         case .undo: await undo()
         }
@@ -170,20 +176,32 @@ final class CommandRunner {
     /// x and smallest y among the selected cards), not at the board origin, and in reading order
     /// (by y, then x) so the grid keeps the cards' visual order. Falls back to (80, 80) when no
     /// frame could be read.
-    func gatherGrid(columns: Int) async { await gather(layout: "grid", columns: columns) }
+    func gatherGrid(columns: Int) async { await gather(layout: "grid", columns: columns, order: SortOrder()) }
 
     /// `layout` is grid, row or column (card-gather's vocabulary); `columns` only matters for grid.
-    func gather(layout: String, columns: Int) async {
+    /// `order` picks the sequence the cards fill the layout in: reading order (y, then x),
+    /// by title, or by creation time, optionally reversed.
+    func gather(layout: String, columns: Int, order: SortOrder) async {
         await guarded {
             let cols = max(1, columns)
-            let label = layout == "grid" ? "排成 \(cols) 列" : (layout == "row" ? "排成一行" : "排成一列")
+            var label = layout == "grid" ? "排成 \(cols) 列" : (layout == "row" ? "排成一行" : "排成一列")
+            if let o = order.label { label += "（\(o)）" }
             await frameStep(label: label) { frames in
                 let known = state.selectedCardIds.compactMap { id in frames[id].map { (id, $0) } }
                 let originX = known.map(\.1.x).min() ?? 80
                 let originY = known.map(\.1.y).min() ?? 80
-                let ordered = known.sorted { a, b in
-                    abs(a.1.y - b.1.y) > 1 ? a.1.y < b.1.y : a.1.x < b.1.x
+                var ordered = known.sorted { a, b in
+                    switch order.key {
+                    case .visual:
+                        return abs(a.1.y - b.1.y) > 1 ? a.1.y < b.1.y : a.1.x < b.1.x
+                    case .title:
+                        let ta = lastRows[a.0]?.title ?? "", tb = lastRows[b.0]?.title ?? ""
+                        return ta.localizedStandardCompare(tb) == .orderedAscending
+                    case .created:
+                        return (lastRows[a.0]?.createdAt ?? "") < (lastRows[b.0]?.createdAt ?? "")
+                    }
                 }.map(\.0)
+                if order.reversed { ordered.reverse() }
                 let ids = ordered + state.selectedCardIds.filter { !ordered.contains($0) }
                 var args = ["card-gather", "--ids", ids.joined(separator: ","), "--layout", layout,
                             "--x", Self.num(originX), "--y", Self.num(originY), "--spacing", "40"]

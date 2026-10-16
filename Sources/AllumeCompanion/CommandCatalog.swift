@@ -2,8 +2,26 @@ import Foundation
 
 /// The commands the Spotlight-style panel can run, with multilingual aliases and argument parsing.
 /// Pure Swift (no AppKit) so it can be unit-tested with a plain `swiftc` build.
+/// How cards are ordered inside a layout. `visual` = reading order (by y, then x).
+struct SortOrder: Equatable {
+    enum Key: String { case visual, title, created }
+    var key: Key = .visual
+    var reversed = false
+
+    var label: String? {
+        switch (key, reversed) {
+        case (.visual, false): return nil
+        case (.visual, true): return "逆序"
+        case (.title, false): return "按标题"
+        case (.title, true): return "按标题逆序"
+        case (.created, false): return "按时间"
+        case (.created, true): return "按时间逆序"
+        }
+    }
+}
+
 enum CommandKind: Equatable {
-    case gather(layout: String, columns: Int)   // card-gather --layout grid|row|column
+    case gather(layout: String, columns: Int, order: SortOrder)   // card-gather --layout grid|row|column
     case resize(width: Int, height: Int)        // card-move --width --height on each card (one of `sizes`)
     case undo
 }
@@ -21,6 +39,7 @@ struct CommandSpec {
 
 struct ParsedArgs: Equatable {
     var number: Int?                 // first standalone integer, e.g. "grid 4" / "排成4列"
+    var order = SortOrder()          // from modifier words: 逆序 / reverse / 按标题 / by date …
 }
 
 struct CommandMatch: Identifiable {
@@ -46,20 +65,20 @@ enum CommandCatalog {
                     symbol: "square.grid.3x3",
                     aliases: ["排成", "排列", "整理", "网格", "列", "grid", "arrange", "columns", "sort", "tidy", "pailie", "wangge", "zhengli"],
                     needsSelection: true,
-                    build: { .gather(layout: "grid", columns: $0.number ?? defaultColumns) },
-                    display: { "排成 \($0.number ?? defaultColumns) 列" }),
+                    build: { .gather(layout: "grid", columns: $0.number ?? defaultColumns, order: $0.order) },
+                    display: { "排成 \($0.number ?? defaultColumns) 列" + orderSuffix($0) }),
         CommandSpec(id: "row", title: "排成一行", hint: "横向排成一行",
                     symbol: "rectangle.split.3x1",
                     aliases: ["一行", "横排", "横向", "行", "row", "horizontal", "yihang", "hengpai"],
                     needsSelection: true,
-                    build: { _ in .gather(layout: "row", columns: 0) },
-                    display: { _ in "排成一行" }),
+                    build: { .gather(layout: "row", columns: 0, order: $0.order) },
+                    display: { "排成一行" + orderSuffix($0) }),
         CommandSpec(id: "column", title: "排成一列", hint: "纵向排成一列",
                     symbol: "rectangle.split.1x2",
                     aliases: ["一列", "竖排", "纵向", "column", "vertical", "stack", "yilie", "shupai"],
                     needsSelection: true,
-                    build: { _ in .gather(layout: "column", columns: 0) },
-                    display: { _ in "排成一列" }),
+                    build: { .gather(layout: "column", columns: 0, order: $0.order) },
+                    display: { "排成一列" + orderSuffix($0) }),
         CommandSpec(id: "size-medium", title: "统一大小：中", hint: "200×150（Allume 默认大小）",
                     symbol: "square.resize",
                     aliases: ["统一", "大小", "尺寸", "中", "中等", "一样大", "同样大", "size", "same", "medium", "normal", "tongyi", "daxiao", "zhong"],
@@ -86,12 +105,45 @@ enum CommandCatalog {
                     display: { _ in "撤销" }),
     ]
 
+    static func orderSuffix(_ args: ParsedArgs) -> String {
+        args.order.label.map { "（\($0)）" } ?? ""
+    }
+
+    /// Modifier words that set the sort order instead of picking a command. "按标题" and
+    /// "by title" style phrases are matched after dropping 按/by.
+    static let orderWords: [(words: [String], apply: (inout SortOrder) -> Void)] = [
+        (["逆序", "倒序", "反序", "反过来", "倒过来", "reverse", "reversed", "desc", "descending", "nixu", "daoxu"], { $0.reversed = true }),
+        (["顺序", "正序", "asc", "ascending", "shunxu", "zhengxu"], { $0.reversed = false }),
+        (["标题", "名字", "名称", "字母", "title", "name", "alpha", "biaoti", "mingzi"], { $0.key = .title }),
+        (["时间", "日期", "创建", "新旧", "date", "time", "created", "newest", "oldest", "shijian", "riqi"], { $0.key = .created }),
+    ]
+
     /// Commands matching `query`, best first. Empty query lists everything in catalog order.
     static func matches(for query: String) -> [CommandMatch] {
-        let args = parseArgs(query)
-        let words = normalizedWords(query)
+        var args = parseArgs(query)
+        var words: [String] = []
+        for w in normalizedWords(query) {
+            if w == "by" { continue }
+            // A CJK run can hold several words ("按时间逆序", "列倒序"): peel modifier words off it.
+            var rest = w
+            var changed = true
+            while changed {
+                changed = false
+                for rule in orderWords {
+                    for m in rule.words where rest.contains(m) {
+                        rule.apply(&args.order)
+                        rest = rest.replacingOccurrences(of: m, with: "")
+                        changed = true
+                    }
+                }
+            }
+            rest = rest.replacingOccurrences(of: "按", with: "")
+            if !rest.isEmpty { words.append(rest) }
+        }
         if words.isEmpty {
-            return specs.map { CommandMatch(spec: $0, args: args, score: 0, lastWordScore: 0) }
+            // Only modifiers (e.g. "逆序"): they apply to the default layout, grid.
+            let list = args.order == SortOrder() ? specs : specs.filter { $0.id == "grid" || $0.id == "row" || $0.id == "column" }
+            return list.map { CommandMatch(spec: $0, args: args, score: 0, lastWordScore: 0) }
         }
         return specs.compactMap { spec in
             // Every word must match some alias; the score is the sum of the best per-word scores.
