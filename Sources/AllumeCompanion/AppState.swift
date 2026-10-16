@@ -1,10 +1,21 @@
-import Foundation
+import AppKit
 import Combine
 
 struct CardSummary: Identifiable, Equatable {
     let id: String
     var title: String
     var kind: String
+    /// First few dozen characters of a text/chain card's body (shown instead of a picture).
+    var excerpt: String = ""
+    /// For subBoard cards: the board document id (`document.id`), what `board-content` wants.
+    var documentId: String?
+    /// Filled in asynchronously by ThumbnailLoader for image / pdf / subBoard cards.
+    var thumbnail: NSImage?
+
+    static func == (a: CardSummary, b: CardSummary) -> Bool {
+        a.id == b.id && a.title == b.title && a.kind == b.kind && a.excerpt == b.excerpt
+            && a.documentId == b.documentId && a.thumbnail === b.thumbnail
+    }
 }
 
 /// Shared observable state for the overlay views.
@@ -14,7 +25,7 @@ final class AppState: ObservableObject {
     @Published var allumeRunning = false
     @Published var boardTitle = ""
     @Published var selectedCardIds: [String] = []
-    /// Titles/kinds of the selected cards, filled in asynchronously after ⌘K for the card stack.
+    /// Titles/kinds/thumbnails of the selected cards, filled in asynchronously after ⌘K for the card stack.
     @Published var selectedCards: [CardSummary] = []
     @Published var selectionMessage = ""
     @Published var log = ""

@@ -19,7 +19,9 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
 - 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘K；`kill -USR2 ...` 等于点"排成 N 列"
   （`ALLUME_USR2="小"` 这类值会像在输入框里打字一样经过命令匹配）；`kill -INFO ...` 等于点"撤销"；
-  `ALLUME_SELECT_IDS=a,b,c open build/AllumeCompanion.app` 启动时直接预设选中的卡片 id，不经过 ⌘C；
+  `ALLUME_SELECT_IDS=a,b,c open build/AllumeCompanion.app` 启动时直接预设选中的卡片 id，不经过 ⌘C
+  （这时 `kill -USR1` 只开关面板、不重读选中；再加 `ALLUME_SNAPSHOT=/path.png` 会在面板打开时把它渲染成 PNG，
+  不需要屏幕录制权限）；
   用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志。
 - 它是菜单栏常驻 app（无 Dock 图标），从菜单栏图标里退出。
 
@@ -91,8 +93,8 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 
 ### 命令面板（Spotlight 风格）
 
-⌘K 之后面板从 Allume 窗口顶部弹出：左边是选中卡片的层叠缩略（最多叠 3 张，角标是张数，标题和类型图标
-用 `board-content` 异步补上），右边是命令输入框，下面列出匹配的命令。↑↓ 选，⏎ 执行，Esc 或再按 ⌘K 关闭。
+⌘K 之后面板从 Allume 窗口顶部弹出：左边是选中卡片的层叠缩略（最多叠 3 张，角标是张数，标题、类型和缩略图
+在面板打开后异步补上，见下面"卡片缩略图从哪来"），右边是命令输入框，下面列出匹配的命令。↑↓ 选，⏎ 执行，Esc 或再按 ⌘K 关闭。
 执行后面板不关，底部一行显示结果（成功如"已排成 3 列"，失败是 stderr 第一行），可以接着输 `撤销`。
 
 命令和别名都在 `CommandCatalog.swift`，匹配规则：按空格和中英文边界分词，每个词要能匹配某个别名
@@ -125,6 +127,29 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 
 面板是 `NSPanel(.nonactivatingPanel)`，能接键盘但不会把本 app 激活，Allume 保持前台。不提供删除：
 Allume 自己的 Delete 键就是删除，而且带原生 ⌘Z。
+
+### 卡片缩略图从哪来
+
+层叠里的每张卡（`CardFace`）按类型显示不同内容；像素都来自 CLI，经 `open -W` 启动，stdout 落到临时文件再读回
+（CLI 是沙盒 app，`-o` 写不到任意路径，所以图片字节只能从 stdout 拿，`AllumeCLI.run(…, raw: true)`）：
+
+| 卡片类型 | 来源 | 显示 |
+|---|---|---|
+| image | `allume card-content <id> --contents raw --format json`：原图 JPEG/PNG 字节在 stdout，元数据 JSON 在 stderr。用 ImageIO 直接解码成最长边 120px 的缩略（不解码整张大图，按 EXIF 方向转正） | 整张卡铺满（aspect fill，圆角裁切），标题叠在底部半透明条上 |
+| pdf | `allume card-pdf-page <id> --page 1 --max-dimension 256 --format json`：第一页 PNG 在 stdout，同样缩到 120px | 同上 |
+| subBoard | 子白板没有图。`board-content <document.id> --format json`（`document.id` 在 ⌘K 后读的那行 `board-content` 里就有）给出里面每张卡的 `frame`，按所有卡的包围盒归一化到 120×84，每张卡画一个圆角小矩形，当线框缩略 | 同上，标题是白板名 |
+| text、chain | 不取图：`board-content` 行里 `document.body` 就是正文，取前 60 字（空白折叠） | 正文小字，最多 4 行 |
+| url、video | 不取图（url 只有链接和标题；video 只有整段 mp4） | 类型图标 + 标题 |
+
+流程：`describeSelection()` 先用 `board-content` 补齐标题/类型/正文（面板已经打开，不等这一步），然后只对层叠显示的
+前 3 张（`CardStackView.visible`）并发取图，每张取到就单独写回 `state.selectedCards`，面板随之刷新。
+`ThumbnailLoader` 按卡片 id 用 `NSCache` 缓存（最多 48 张），同一张卡在 app 运行期间只取一次；正在取的卡片再被请求时
+共用同一次调用。实测（三张分别在不同白板上）：image 原图 990KB → 55×120，约 300–450ms；pdf 9.7KB → 104×120，
+约 230–450ms；subBoard 12 张卡 → 120×84，约 230–470ms；三张并发，都在面板打开后约半秒内到齐。
+每张的尺寸和耗时写进 `~/Library/Logs/AllumeCompanion.log`（`thumbnail <kind> <id>: WxH px, …, N ms`）。
+
+局限：只取前 3 张；缩略图不跟卡片内容变化（改了图片要重启 app 才刷新）；pdf 只渲染第一页；
+`card-pdf-page` 的 `--max-dimension` 最小 256，所以 PDF 总是先渲染 256 再缩到 120。
 
 ### 撤销上一步
 
@@ -182,9 +207,10 @@ Sources/AllumeCompanion/
   SelectionReader.swift            剪贴板快照 → ⌘C → 解析 → 恢复
   HotKey.swift                     Carbon 全局快捷键 ⌘K（只在 Allume 前台时注册）
   AllumeCLI.swift                  经 open -W 调 allume（原因见上）
-  CommandRunner.swift              三条命令 + 一层撤销（执行前记 id / frame）
+  CommandRunner.swift              三条命令 + 一层撤销（执行前记 id / frame）；describeSelection 补标题/正文并触发取图
+  ThumbnailLoader.swift            按类型取缩略图（image/pdf 字节、subBoard 线框），NSCache 按卡片 id 缓存
   OverlayController.swift          命令面板 NSPanel 及定位
   CommandCatalog.swift             命令表、多语言别名、参数解析（纯 Swift，可单独 swiftc 测）
-  Views.swift                      SwiftUI：CommandPanelView（输入框 + 结果列表）、CardStackView
+  Views.swift                      SwiftUI：CommandPanelView（输入框 + 结果列表）、CardStackView / CardFace（缩略图、正文、图标三种面）
   Log.swift                        ~/Library/Logs/AllumeCompanion.log
 ```

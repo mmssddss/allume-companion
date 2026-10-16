@@ -17,12 +17,16 @@ enum AllumeCLI {
     struct Result {
         let status: Int32
         let stdout: String
+        /// stdout as bytes; only filled when run with `raw: true` (image/PDF bytes), else empty.
+        let stdoutData: Data
         let stderr: String
         var ok: Bool { status == 0 }
     }
 
-    static func run(_ args: [String]) async -> Result {
-        await Task.detached(priority: .userInitiated) { runSync(args) }.value
+    /// `raw`: keep stdout as bytes (`stdoutData`) instead of decoding it as text — for
+    /// `card-content --contents raw` and `card-pdf-page`, which write image bytes to stdout.
+    static func run(_ args: [String], raw: Bool = false) async -> Result {
+        await Task.detached(priority: .userInitiated) { runSync(args, raw: raw) }.value
     }
 
     /// Resolved path of the real executable (open(1) needs the binary, not the symlink).
@@ -30,9 +34,9 @@ enum AllumeCLI {
         (try? FileManager.default.destinationOfSymbolicLink(atPath: path)) ?? path
     }
 
-    static func runSync(_ args: [String]) -> Result {
+    static func runSync(_ args: [String], raw: Bool = false) -> Result {
         guard FileManager.default.isExecutableFile(atPath: executable) else {
-            return Result(status: -1, stdout: "", stderr: "找不到 \(path)（在 Allume → Preferences → Command Line 里安装）")
+            return Result(status: -1, stdout: "", stdoutData: Data(), stderr: "找不到 \(path)（在 Allume → Preferences → Command Line 里安装）")
         }
         let tmp = FileManager.default.temporaryDirectory
         let out = tmp.appendingPathComponent("allume-\(UUID().uuidString).out")
@@ -48,17 +52,19 @@ enum AllumeCLI {
         p.standardOutput = FileHandle.nullDevice
         p.standardError = openErr
         do { try p.run() } catch {
-            return Result(status: -1, stdout: "", stderr: "无法启动 open: \(error.localizedDescription)")
+            return Result(status: -1, stdout: "", stdoutData: Data(), stderr: "无法启动 open: \(error.localizedDescription)")
         }
         let openErrText = String(decoding: openErr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         p.waitUntilExit()
-        let o = (try? String(contentsOf: out, encoding: .utf8)) ?? ""
+        let bytes = (try? Data(contentsOf: out)) ?? Data()
+        let o = raw ? "" : String(decoding: bytes, as: UTF8.self)
         let e = ((try? String(contentsOf: err, encoding: .utf8)) ?? "") + openErrText
         // open(1) does not relay the CLI's exit status (it is 0 even when the CLI printed an
-        // error), so treat an "error:" line on stderr as failure.
+        // error), so treat an "error:" line on stderr as failure. With `raw` the stderr is the
+        // card's JSON metadata, whose title may legitimately contain "error": judge by the bytes.
         var status = p.terminationStatus
-        if status == 0, e.lowercased().contains("error") { status = 1 }
-        return Result(status: status, stdout: o, stderr: e)
+        if status == 0, raw ? bytes.isEmpty : e.lowercased().contains("error") { status = 1 }
+        return Result(status: status, stdout: o, stdoutData: raw ? bytes : Data(), stderr: e)
     }
 
     /// Shell-style rendering of a command line for the log.

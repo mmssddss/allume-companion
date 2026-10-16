@@ -26,4 +26,10 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   面板不提供删除：Allume 自己的 Delete 键带原生 ⌘Z。
 - `board-content` 只接受完整白板文档 id `<前缀>:<后缀>`，卡片 id 的 scope 前缀不够；`card-content <卡片id> -f json` 的
   `parentDocumentId` 给出父白板文档 id，`frame` 给出位置尺寸。`card-move` 接受小数坐标；`undelete` 会把卡片放回原 frame。
+- 缩略图字节只能从 CLI 的 stdout 拿（CLI 是沙盒 app，`-o` 写不到任意路径）：image 用 `card-content <id> --contents raw -f json`
+  （字节在 stdout、元数据在 stderr），pdf 用 `card-pdf-page <id> --page 1 --max-dimension 256 -f json`（最小 256）；
+  `AllumeCLI.run(…, raw: true)` 返回 `stdoutData`。`board-content -f json` 的行里已带 text/chain 的 `document.body`
+  和 subBoard 的 `document.id`，不必再逐张 `card-content`。
+- 测试面板外观：`ALLUME_SELECT_IDS=… ALLUME_SNAPSHOT=/path.png open build/AllumeCompanion.app`，再 `kill -USR1`，
+  面板会渲染成 PNG（`screencapture` 在这里没有屏幕录制权限）。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。

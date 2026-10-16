@@ -41,13 +41,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if self.overlay.isPanelVisible { self.overlay.hidePanel() } else { self.readSelectionAndShow() }
         }
 
-        // Test hook: `kill -USR1 $(pgrep -x AllumeCompanion)` behaves like pressing ⌘K.
+        // Test hook: `kill -USR1 $(pgrep -x AllumeCompanion)` behaves like pressing ⌘K. With
+        // `ALLUME_SELECT_IDS` set it only toggles the panel, keeping the preset selection
+        // instead of re-reading it from Allume.
+        let env = ProcessInfo.processInfo.environment
+        let presetSelection = !(env["ALLUME_SELECT_IDS"] ?? "").isEmpty
         signal(SIGUSR1, SIG_IGN)
         usr1Source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
-        usr1Source?.setEventHandler { [weak self] in self?.hotKey?.action?() }
+        usr1Source?.setEventHandler { [weak self] in
+            guard let self else { return }
+            if presetSelection {
+                if self.overlay.isPanelVisible { self.overlay.hidePanel() } else {
+                    self.tracker.refresh()
+                    self.overlay.update(window: self.tracker.currentWindow())
+                    self.overlay.showPanel()
+                    // `ALLUME_SNAPSHOT=/path.png` also writes a rendering of the panel there
+                    // (screencapture needs Screen Recording; this does not).
+                    if let path = env["ALLUME_SNAPSHOT"], !path.isEmpty {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.overlay.snapshot(to: path) }
+                    }
+                }
+            } else {
+                self.hotKey?.action?()
+            }
+        }
         usr1Source?.resume()
         // Test hook: `ALLUME_SELECT_IDS=a,b,c` pre-fills the selection without going through ⌘C.
-        let env = ProcessInfo.processInfo.environment
         if let ids = env["ALLUME_SELECT_IDS"], !ids.isEmpty {
             state.selectedCardIds = ids.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
             state.appendLog("测试：预设选中 \(state.selectedCardIds.count) 张 " + state.selectedCardIds.joined(separator: ", "))

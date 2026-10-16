@@ -172,6 +172,8 @@ struct CardStackView: View {
     let cards: [CardSummary]
     let count: Int
 
+    /// How many faces the stack draws (and how many thumbnails are fetched per ⌘K).
+    static let visible = 3
     private let size = CGSize(width: 60, height: 42)
 
     var body: some View {
@@ -182,9 +184,8 @@ struct CardStackView: View {
                     .foregroundStyle(.quaternary)
                     .frame(width: size.width, height: size.height)
             }
-            ForEach(Array(cards.prefix(3).enumerated().reversed()), id: \.element.id) { i, card in
-                CardFace(card: card)
-                    .frame(width: size.width, height: size.height)
+            ForEach(Array(cards.prefix(Self.visible).enumerated().reversed()), id: \.element.id) { i, card in
+                CardFace(card: card, size: size)
                     .offset(x: CGFloat(i) * 6, y: CGFloat(i) * -4)
             }
             if count > 0 {
@@ -193,7 +194,7 @@ struct CardStackView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .background(Color.accentColor, in: Capsule())
-                    .offset(x: size.width - 10 + CGFloat(min(cards.count, 3) - 1) * 6, y: -10)
+                    .offset(x: size.width - 10 + CGFloat(min(cards.count, Self.visible) - 1) * 6, y: -10)
             }
         }
         .frame(width: size.width + 14, height: size.height + 8, alignment: .bottomLeading)
@@ -201,24 +202,54 @@ struct CardStackView: View {
     }
 }
 
+/// One card in the stack. With a thumbnail the picture fills the card (aspect fill, rounded
+/// clip) and the title sits on a translucent bar at the bottom; text/chain cards show the first
+/// words of their body; everything else is the kind's icon plus the title.
 private struct CardFace: View {
     let card: CardSummary
+    let size: CGSize
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color(nsColor: .windowBackgroundColor))
-                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
-            RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary)
-            VStack(alignment: .leading, spacing: 2) {
-                Image(systemName: symbol).font(.system(size: 9)).foregroundStyle(.secondary)
-                Text(card.title.isEmpty ? "…" : card.title)
-                    .font(.system(size: 9, weight: .medium))
-                    .lineLimit(2)
+        ZStack(alignment: .bottomLeading) {
+            Color(nsColor: .windowBackgroundColor)
+            if let img = card.thumbnail {
+                Image(nsImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size.width, height: size.height)
+                    .clipped()
+                if !card.title.isEmpty {
+                    Text(card.title)
+                        .font(.system(size: 8, weight: .medium))
+                        .lineLimit(1)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 4).padding(.vertical, 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.black.opacity(0.45))
+                }
+            } else if !card.excerpt.isEmpty {
+                Text(card.excerpt)
+                    .font(.system(size: 7.5))
+                    .lineLimit(4)
                     .foregroundStyle(.primary)
+                    .padding(4)
+                    .frame(width: size.width, height: size.height, alignment: .topLeading)
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Image(systemName: symbol).font(.system(size: 9)).foregroundStyle(.secondary)
+                    Text(card.title.isEmpty ? "…" : card.title)
+                        .font(.system(size: 9, weight: .medium))
+                        .lineLimit(2)
+                        .foregroundStyle(.primary)
+                }
+                .padding(5)
+                .frame(width: size.width, height: size.height, alignment: .topLeading)
             }
-            .padding(5)
         }
+        .frame(width: size.width, height: size.height)
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
+        .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
     }
 
     private var symbol: String {

@@ -12,6 +12,8 @@ import Foundation
 @MainActor
 final class CommandRunner {
     let state: AppState
+    /// Previews for the card stack, cached by card id.
+    let thumbnails = ThumbnailLoader()
     init(state: AppState) { self.state = state }
 
     // MARK: - Undo state
@@ -22,12 +24,17 @@ final class CommandRunner {
 
     /// One `board-content` / `card-content` row; only the fields we need.
     private struct CardRow: Decodable {
+        struct Document: Decodable {
+            let id: String?
+            let body: String?       // text / chain cards: the inline body
+        }
         let id: String
         let kind: String?
         let title: String?
         let createdAt: String?      // ISO-8601 with Z, so string order is time order
         let frame: Frame
         let parentDocumentId: String?
+        let document: Document?
     }
 
     /// Rows cached by the last `fetchRows`, so `gather` can sort by title/createdAt without
@@ -121,17 +128,38 @@ final class CommandRunner {
         return frames
     }
 
-    /// Fills `state.selectedCards` (titles and kinds) for the panel's card stack.
+    /// Fills `state.selectedCards` (titles, kinds, text excerpts) for the panel's card stack,
+    /// then fetches thumbnails for the cards the stack shows (the first `CardStackView.visible`),
+    /// each landing in `state.selectedCards` as it arrives so the panel never waits for them.
     func describeSelection() async {
         let ids = state.selectedCardIds
-        state.selectedCards = ids.map { CardSummary(id: $0, title: "", kind: "") }
+        state.selectedCards = ids.map { CardSummary(id: $0, title: "", kind: "", thumbnail: thumbnails.cached($0)) }
         guard !ids.isEmpty else { return }
         let rows = await fetchRows(ids)
         guard state.selectedCardIds == ids else { return } // selection changed meanwhile
         state.selectedCards = ids.map { id in
-            CardSummary(id: id, title: rows[id]?.title ?? "", kind: rows[id]?.kind ?? "")
+            let row = rows[id]
+            return CardSummary(id: id, title: row?.title ?? "", kind: row?.kind ?? "",
+                               excerpt: Self.excerpt(row?.document?.body),
+                               documentId: row?.document?.id,
+                               thumbnail: thumbnails.cached(id))
         }
         Log.info("selection described: " + state.selectedCards.map { "\($0.kind):\($0.title)" }.joined(separator: " | "))
+        for card in state.selectedCards.prefix(CardStackView.visible)
+        where card.thumbnail == nil && ThumbnailLoader.hasThumbnail(kind: card.kind) {
+            Task { @MainActor in
+                guard let img = await thumbnails.thumbnail(for: card),
+                      let i = state.selectedCards.firstIndex(where: { $0.id == card.id }) else { return }
+                state.selectedCards[i].thumbnail = img
+            }
+        }
+    }
+
+    /// First line-ish of a text body for the card face: whitespace collapsed, at most 60 characters.
+    private static func excerpt(_ body: String?) -> String {
+        guard let body else { return "" }
+        let words = body.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ")
+        return String(words.prefix(60))
     }
 
     /// Dispatches a command picked in the panel.

@@ -81,6 +81,15 @@ final class OverlayController {
         Log.info("panel shown at \(panel.frame)")
     }
 
+    /// Test hook: renders the panel's content view into a PNG at `path`.
+    func snapshot(to path: String) {
+        guard let view = panel.contentView, let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        guard let png = rep.representation(using: .png, properties: [:]) else { return }
+        do { try png.write(to: URL(fileURLWithPath: path)); Log.info("panel snapshot → \(path) (\(rep.pixelsWide)×\(rep.pixelsHigh))") }
+        catch { Log.info("panel snapshot failed: \(error)") }
+    }
+
     func hidePanel() {
         guard panel.isVisible else { return }
         panel.orderOut(nil)
