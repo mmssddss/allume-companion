@@ -39,9 +39,16 @@ final class AppState: ObservableObject {
     /// One-line result of the last command, shown under the buttons (the full CLI transcript
     /// goes to `log` and ~/Library/Logs/AllumeCompanion.log).
     @Published var status = ""
+    /// Whether `status` reports a failure (the footer shows a warning sign instead of a check).
+    @Published var statusIsError = false
     @Published var columns = 3
     /// Name of the step the "撤销" button would revert; nil when there is nothing to undo.
     @Published var undoLabel: String?
+
+    func setStatus(_ s: String, error: Bool = false) {
+        status = s
+        statusIsError = error
+    }
 
     func appendLog(_ s: String) {
         Log.info("panel: " + s.trimmingCharacters(in: .whitespacesAndNewlines))

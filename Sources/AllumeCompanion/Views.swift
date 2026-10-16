@@ -12,7 +12,18 @@ extension Notification.Name {
     static let panelHeight = Notification.Name("AllumeCompanion.panelHeight")
 }
 
+/// Allume's own palette, so the panel reads as part of it rather than a generic blue sheet.
+enum Theme {
+    /// Allume's accent (its asset catalog's `accent`, Display P3 0.388/0.165/0.961): selection
+    /// highlight, count badge, and the filament on the app icon.
+    static let accent = Color(.displayP3, red: 0.388, green: 0.165, blue: 0.961)
+}
+
 enum PanelMetrics {
+    static let cornerRadius: CGFloat = 16
+    /// Height changes (typing filters the list, the selection arrives or times out) animate
+    /// over this, both the window frame (OverlayController) and the rows inside.
+    static let resizeDuration: TimeInterval = 0.15
     static let searchRow: CGFloat = 62
     static let row: CGFloat = 46
     static let listPadding: CGFloat = 16
@@ -46,8 +57,7 @@ struct CommandPanelView: View {
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(.quaternary))
+        .background { panelBackground }
         .onAppear { fieldFocused = true }
         .onReceive(NotificationCenter.default.publisher(for: .panelShown)) { _ in
             if !query.isEmpty { query = "" }
@@ -65,6 +75,17 @@ struct CommandPanelView: View {
 
     private func postHeight() {
         NotificationCenter.default.post(name: .panelHeight, object: PanelMetrics.height(forRows: matches.count))
+    }
+
+    /// Liquid Glass on macOS 26 (what Spotlight and Allume's own floating panels are made of);
+    /// the regular material with a hairline edge before that.
+    @ViewBuilder private var panelBackground: some View {
+        if #available(macOS 26.0, *) {
+            Color.clear.glassEffect(.regular, in: RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius))
+        } else {
+            RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius).fill(.regularMaterial)
+                .overlay(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius).strokeBorder(.quaternary))
+        }
     }
 
     // MARK: - Search row
@@ -118,6 +139,7 @@ struct CommandPanelView: View {
                 .padding(8)
             }
             .frame(height: CGFloat(max(1, min(matches.count, PanelMetrics.maxRows))) * PanelMetrics.row + PanelMetrics.listPadding)
+            .animation(.easeOut(duration: PanelMetrics.resizeDuration), value: matches.count)
             .onChange(of: selectedIndex) { _, i in
                 if matches.indices.contains(i) { proxy.scrollTo(matches[i].id, anchor: nil) }
             }
@@ -125,8 +147,11 @@ struct CommandPanelView: View {
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 5) {
             if !state.status.isEmpty {
+                Image(systemName: state.statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(state.statusIsError ? Color.orange : Color.green)
                 Text(state.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             } else if !state.boardTitle.isEmpty {
                 Text("白板：\(state.boardTitle)").font(.caption).foregroundStyle(.tertiary)
@@ -175,7 +200,7 @@ private struct ResultRow: View {
         .padding(.horizontal, 10)
         .frame(maxHeight: .infinity)
         .foregroundStyle(selected ? Color.white : Color.primary)
-        .background(selected ? Color.accentColor : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+        .background(selected ? Theme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -199,7 +224,7 @@ struct CardStackView: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Color.accentColor, in: Capsule())
+                    .background(Theme.accent, in: Capsule())
                     .offset(x: size.width - 10 + CGFloat(min(cards.count, Self.visible) - 1) * 6, y: -10)
             }
         }

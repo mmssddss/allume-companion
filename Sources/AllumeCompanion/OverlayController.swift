@@ -44,7 +44,15 @@ final class OverlayController {
             Task { @MainActor in
                 guard let self, self.contentHeight != h else { return }
                 self.contentHeight = h
-                if self.panel.isVisible, let w = self.window { self.panel.setFrame(self.panelFrame(for: w.frame), display: true) }
+                if self.panel.isVisible, let w = self.window {
+                    // Same duration and curve as the list inside (CommandPanelView.resizeAnimation),
+                    // so the bottom edge and the rows move together instead of jumping.
+                    NSAnimationContext.runAnimationGroup { ctx in
+                        ctx.duration = PanelMetrics.resizeDuration
+                        ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                        self.panel.animator().setFrame(self.panelFrame(for: w.frame), display: true)
+                    }
+                }
                 Log.info("panel height → \(h), frame \(self.panel.frame)")
             }
         }

@@ -60,7 +60,7 @@ final class CommandRunner {
         if !r.stderr.isEmpty { state.appendLog("stderr: " + r.stderr) }
         if !r.ok {
             state.appendLog("exit \(r.status)")
-            state.status = r.stderr.split(separator: "\n").first.map(String.init) ?? "命令失败（exit \(r.status)）"
+            state.setStatus(r.stderr.split(separator: "\n").first.map(String.init) ?? "命令失败（exit \(r.status)）", error: true)
         }
         return r
     }
@@ -69,7 +69,7 @@ final class CommandRunner {
         guard !state.isRunning else { return }
         guard !state.selectedCardIds.isEmpty else { state.appendLog("没有选中的卡片。先按 ⌘K 读取。"); return }
         state.isRunning = true
-        state.status = ""
+        state.setStatus("")
         await body()
         state.isRunning = false
     }
@@ -236,7 +236,7 @@ final class CommandRunner {
         let changed = await body(before)
         if let boardModel { Task { await boardModel.refresh(reason: "after \(label)") } }
         guard changed else { return }
-        state.status = "已\(label)"
+        state.setStatus("已\(label)")
         guard !before.isEmpty else { state.appendLog("没有可撤销的记录"); return }
         undoEntry = UndoEntry(label: label,
                               commands: ids.compactMap { id in before[id].map { moveBack(id, to: $0) } })
@@ -311,7 +311,7 @@ final class CommandRunner {
         state.appendLog("撤销：\(entry.label)")
         var failed = 0
         for cmd in entry.commands where !(await exec(cmd).ok) { failed += 1 }
-        state.status = failed == 0 ? "已撤销：\(entry.label)" : "撤销 \(entry.label)：\(failed)/\(entry.commands.count) 条失败"
+        state.setStatus(failed == 0 ? "已撤销：\(entry.label)" : "撤销 \(entry.label)：\(failed)/\(entry.commands.count) 条失败", error: failed > 0)
         state.appendLog(state.status)
         if let boardModel { Task { await boardModel.refresh(reason: "after undo") } }
     }
