@@ -9,9 +9,16 @@ import Foundation
 /// prefix) and `cardId` (suffix). `hex(scopeId):hex(cardId)` is exactly the qualified id the CLI uses.
 ///
 /// Flow: snapshot the pasteboard → post ⌘C to Allume's pid → wait for changeCount to move
-/// (≤ 300 ms) → parse → restore the snapshot.
+/// (≤ `timeout`) → parse → restore the snapshot. Measured: Allume writes 30–110 ms after the
+/// ⌘C. If it is slower than `timeout` (a huge board, a busy machine), the wait gives up but
+/// keeps watching for `lateWatch` more: a late write is then still parsed, the user's clipboard
+/// still restored, and the cards delivered through `onLateSelection`.
 enum SelectionReader {
     static let cardType = NSPasteboard.PasteboardType("com.allume.copyable.card")
+    static let timeout: TimeInterval = 0.4
+    static let lateWatch: TimeInterval = 1.5
+    /// Cards that arrived after `capture` had already thrown `.timeout` (main actor).
+    @MainActor static var onLateSelection: (([Card]) -> Void)?
 
     struct Card: Equatable {
         let id: String
@@ -28,7 +35,7 @@ enum SelectionReader {
             switch self {
             case .notTrusted: return "没有辅助功能权限，无法向 Allume 发送 ⌘C"
             case .noAllume: return "Allume 没在运行"
-            case .timeout: return "Allume 在 300ms 内没有写剪贴板：可能没有选中卡片，或焦点不在画布上"
+            case .timeout: return "Allume 在 \(Int(SelectionReader.timeout * 1000))ms 内没有写剪贴板：可能没有选中卡片，或焦点不在画布上"
             }
         }
     }
@@ -38,14 +45,19 @@ enum SelectionReader {
         guard AXIsProcessTrusted() else { throw Failure.notTrusted }
         guard let pid else { throw Failure.noAllume }
         let pb = NSPasteboard.general
+        let t0 = Date()
         let saved = snapshot(pb)
+        let bytes = saved.reduce(0) { $0 + $1.values.reduce(0) { $0 + $1.count } }
+        let snapMs = Int(Date().timeIntervalSince(t0) * 1000)
+        if snapMs > 20 || bytes > 1_000_000 { Log.info("pasteboard snapshot: \(saved.count) items, \(bytes) bytes, \(snapMs) ms") }
         let before = pb.changeCount
 
         postCommandC(to: pid)
 
-        let deadline = Date().addingTimeInterval(0.3)
+        let deadline = Date().addingTimeInterval(timeout)
         while pb.changeCount == before {
             if Date() > deadline {
+                watchLate(pb, before: before, saved: saved)
                 throw Failure.timeout
             }
             try? await Task.sleep(nanoseconds: 2_000_000)
@@ -57,6 +69,28 @@ enum SelectionReader {
         Log.info("pasteboard after ⌘C: changeCount \(before)→\(pb.changeCount), items=\((pb.pasteboardItems ?? []).map { $0.types.map(\.rawValue) })")
         restore(pb, saved)
         return cards
+    }
+
+    /// After a timeout: if Allume writes within `lateWatch`, restore the clipboard and hand the
+    /// cards on. Without this a late write would leave Allume's card data in the user's clipboard.
+    @MainActor
+    private static func watchLate(_ pb: NSPasteboard, before: Int, saved: Snapshot) {
+        Task { @MainActor in
+            let deadline = Date().addingTimeInterval(lateWatch)
+            while pb.changeCount == before {
+                if Date() > deadline { return }
+                try? await Task.sleep(nanoseconds: 20_000_000)
+            }
+            let items = pb.pasteboardItems ?? []
+            guard items.contains(where: { $0.types.contains(cardType) }) else {
+                Log.info("pasteboard changed after the ⌘C timeout, but not by Allume; left alone")
+                return
+            }
+            let cards = parse(pb)
+            restore(pb, saved)
+            Log.info("late ⌘C: \(cards.count) cards \(Int(Date().timeIntervalSince(deadline.addingTimeInterval(-lateWatch - timeout)) * 1000)) ms after the ⌘C; clipboard restored")
+            onLateSelection?(cards)
+        }
     }
 
     // MARK: - ⌘C

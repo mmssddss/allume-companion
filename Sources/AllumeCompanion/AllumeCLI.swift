@@ -48,7 +48,17 @@ enum AllumeCLI {
     static func run(_ args: [String], raw: Bool = false, background: Bool = false) async -> Result {
         count(background: background)
         if background { Log.info("cli[bg] " + render(args)) }
-        return await Task.detached(priority: background ? .utility : .userInitiated) { runSync(args, raw: raw) }.value
+        let priority: TaskPriority = background ? .utility : .userInitiated
+        var r = await Task.detached(priority: priority) { runSync(args, raw: raw) }.value
+        // `open -W` occasionally fails to attach to the process it just launched ("Unable to
+        // block on applications"), mostly when several run at once; the CLI itself was fine.
+        // One retry, for every caller.
+        if !r.ok, r.stderr.contains("Unable to block") {
+            Log.info("cli: open -W could not attach (\(r.stderr.split(separator: "\n").first ?? "")), retrying " + render(args))
+            count(background: background)
+            r = await Task.detached(priority: priority) { runSync(args, raw: raw) }.value
+        }
+        return r
     }
 
     /// Resolved path of the real executable (open(1) needs the binary, not the symlink).

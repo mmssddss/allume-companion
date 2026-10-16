@@ -14,6 +14,10 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 
 - `scripts/build-app.sh [debug|release]` 只构建打包，不启动。它把 `Resources/Info.plist`（含 `LSUIElement`）套在
   SwiftPM 产物外面做成 `.app`。
+- 图标：`Resources/AppIcon.icon` 是 Icon Composer 文档（macOS 26 的 Liquid Glass 分层图标）：Allume 同款靛紫渐变底，
+  三张白色玻璃卡片叠成面板里的"选中卡片堆"，顶卡上是 Allume 标志里那条回环细线。图层 SVG 由 `scripts/make-icon-assets.py`
+  生成（改几何只改脚本）。build-app.sh 用 `actool` 把它编成 `Assets.car`（macOS 26+ 渲染玻璃版）和 `AppIcon.icns`
+  （macOS 14/15 的平面兜底），Info.plist 里 `CFBundleIconFile` / `CFBundleIconName` 都是 `AppIcon`。
 - 签名：优先用钥匙串里的 Developer ID Application 证书，其次 Apple Development（可用 `CODESIGN_IDENTITY` 指定），
   找不到就 ad-hoc。辅助功能授权绑定签名证书：**换证书或 ad-hoc 重签都会让 macOS 丢掉授权**，要在系统设置里重新勾选；
   日常构建和 release.sh 都用 Developer ID 就不会反复要。
@@ -147,6 +151,15 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 面板是 `NSPanel(.nonactivatingPanel)`，能接键盘但不会把本 app 激活，Allume 保持前台。不提供删除：
 Allume 自己的 Delete 键就是删除，而且带原生 ⌘Z。
 
+外观：macOS 26 上是 Liquid Glass（`glassEffect`，和 Spotlight 一样），之前的系统是 `regularMaterial` 加一圈细边；
+高亮行、角标用 Allume 自己的紫色强调色（`Theme.accent`，和 app 图标上的线一个颜色）；底栏结果前有 ✓ / ⚠ 表示成功或失败。
+面板高度随结果数变化（输入过滤、选中到达或超时）时窗口和列表同步做 150 ms 的缓动，不跳。
+
+⌘K 到面板出现的路径（`⌘K 统计` 的第一段）：关面板时就把输入框清空、恢复全部命令、把窗口摆到下次打开的位置和尺寸
+（`OverlayController.rearm`），Allume 窗口移动/缩放时隐藏着的面板也跟着摆好，启动时还会透明地显示一次预热 SwiftUI；
+于是打开只剩一次 `orderFront`，实测 5–15 ms（之前 10–50 ms，波动来自每次打开时的重排）。读选中的剪贴板往返在面板出现之后才开始，
+期间卡片堆的位置先放一个虚线占位，卡片到了再换，输入框不会左右跳。
+
 ### 当前白板模型：什么时候查 CLI、什么时候用缓存
 
 Allume 没有任何变更通知，容器也读不到，所以伴生 app 自己在内存里维护一份"当前白板"的副本，⌘K 时基本不查 CLI。
@@ -155,19 +168,24 @@ Allume 没有任何变更通知，容器也读不到，所以伴生 app 自己�
 **BoardIndex（标题 → 白板文档 id）**。窗口标题只给名字，`board-content` 要的是完整文档 id，这张表把两者连起来。
 启动时先读缓存 `~/Library/Application Support/AllumeCompanion/boards.json`，然后在后台重新爬一遍：
 `list-workspaces` 拿每个 workspace 的 `rootBoardId`（标题记为 workspace 名），再对每块白板
-`board-content <id> --kinds subBoard --format json` BFS（`document.id` 是子白板的文档 id，4 个并发，79 块白板约 8 秒，
-`open -W` 偶发 "Unable to block on applications" 时重试一次）。同名白板全部保留，按 `lastSeen` 排序：
+`board-content <id> --kinds subBoard --format json` BFS（`document.id` 是子白板的文档 id，4 个并发，79 块白板约 8 秒；
+`open -W` 偶发 "Unable to block on applications" 时 `AllumeCLI.run` 对所有调用都重试一次）。同名白板全部保留，按 `lastSeen` 排序：
 选中卡片的 scope 前缀（等于白板文档 id 的前缀）能确认用户在哪一块，确认过的排前面。
 窗口标题在表里查不到就再爬一次，最多 60 秒一次；查不到期间走下面的回退路径，回退时 `card-content` 的 `parentDocumentId`
 会直接学进表里。
 
 **BoardModel（当前白板的所有卡片）**。标题换成 id 后，一次 `board-content <id> --format json` 装入该白板全部卡片
-（id、kind、title、frame、createdAt、document.id/body）。刷新时机：
+（id、kind、title、frame、createdAt、document.id/body）。
+
+除当前白板外，模型还保留最近选中过的**其他白板**（最多 6 块）：Allume 的画布可以直接选到内嵌子白板里的卡片，这时窗口标题仍是
+父白板，选中卡的 scope 前缀对不上当前白板。第一次这样选中时 `describeSelection` 走回退路径查一次 `board-content`，
+查到的整块白板交给模型（`adopt`），之后面板打开时这些白板也在后台一起刷新（`refreshOthers`），所以同一处再按 ⌘K 就是 0 次前台调用。
+刷新时机：
 
 | 时机 | 为什么 |
 |---|---|
 | 窗口标题变化（`AllumeTracker` 的 AX 标题） | 切换了白板，立即换模型 |
-| 面板打开（⌘K） | 和 describeSelection 并行，不阻塞面板；装完后用新数据重刷卡片标题 |
+| 面板打开（⌘K） | 和 describeSelection 并行，不阻塞面板；装完后用新数据重刷卡片标题。选中卡所在的其他白板随后也刷新 |
 | 每条写命令（排列、统一大小、撤销）完成后 | 把自己改的位置同步进来 |
 | Allume 在前台时每 10 秒 | 兜底跟上用户手动的移动；不在前台不刷 |
 
@@ -178,9 +196,9 @@ Allume 没有任何变更通知，容器也读不到，所以伴生 app 自己�
 
 | 场景 | 来源 |
 |---|---|
-| ⌘K 后补标题/类型/正文（`describeSelection`） | 选中的 id 全在模型里 → 直接用，0 次 CLI；有不在的（跨白板选中、模型还没装好、刚建的卡） → 原路径：`card-content` 取父白板 + `board-content`（scope → 白板 id 已知时跳过 `card-content`） |
+| ⌘K 后补标题/类型/正文（`describeSelection`） | 选中的 id 全在模型里（当前白板或它保留的其他白板）→ 直接用，0 次 CLI；有不在的（没见过的白板、模型还没装好、刚建的卡） → 原路径：`card-content` 取父白板 + `board-content`（scope → 白板 id 已知时跳过 `card-content`），读到的白板交给模型 |
 | 缩略图 | `ThumbnailLoader` 缓存命中 → 0 次；否则按类型取 1 次 |
-| 写命令前的撤销快照（`snapshotFrames`） | 模型 **2 秒内**刷新过且包含全部选中卡 → 用模型（面板日志"位置来自当前白板模型（x 秒前读取）"）；否则现查一次 `board-content`。撤销必须基于写之前的真实位置，这一点不拿缓存换 |
+| 写命令前的撤销快照（`snapshotFrames`） | 选中卡所在的白板都在模型里且最旧的一块 **2 秒内**刷新过 → 用模型（面板日志"位置来自白板模型（x 秒前读取）"）；否则现查一次 `board-content`。撤销必须基于写之前的真实位置，这一点不拿缓存换 |
 | 排列时按标题/时间排序 | 上一步拿到的行（模型或现查），不另外调用 |
 
 日志里每次 ⌘K 有一行统计：`⌘K 统计：面板显示 N ms（CLI 前台 a 次，后台 b 次）；卡片信息就绪 M ms（CLI 前台 c 次，后台 d 次），k/n 张有标题`。
@@ -282,12 +300,14 @@ frame 怎么读：`allume board-content <白板文档id> --format json` 一次�
 - **剪贴板格式是 Allume 私有的**，`com.allume.copyable.card` 的类型名和 JSON 字段都没有文档，升级可能变。
   解析失败时面板会显示"⌘C 后剪贴板里没有 Allume 卡片"，可以用 `selection.py` 对照。
 - **⌘C 依赖 Allume 的键盘焦点在画布上**。如果焦点在某张文字卡的编辑器里，⌘C 复制的是文字而不是卡片；
-  如果没有选中任何东西，剪贴板不会变，300ms 后超时。
+  如果没有选中任何东西，剪贴板不会变，400ms 后超时。超时后再守 1.5 秒：Allume 若迟到写入，仍会解析、还原剪贴板，
+  面板还开着且没有选中时就把这些卡当作选中（`SelectionReader.onLateSelection`）；否则用户的剪贴板会留着 Allume 的卡片数据。
 - **剪贴板会被短暂覆盖**：中间约 50ms 剪贴板里是 Allume 的卡片数据，之后恢复。恢复是按 item/类型逐个写回，
   对某些带 promise（延迟提供）的剪贴板内容可能恢复不完整。
 - **Allume 的 ⌘C 会不会有副作用**（例如把卡片标记为"已复制"）未知，目前看没有。
 - 白板标题来自 Allume 的窗口标题，只有名字没有 id；Allume 若改成固定窗口标题就失效。
-- CLI 经 `open` 启动依赖 `open` 的 `--stdout/--stderr/-W` 行为，退出码靠 stderr 猜。
+- CLI 经 `open` 启动依赖 `open` 的 `--stdout/--stderr/-W` 行为，退出码靠 stderr 猜；`-W` 偶发连不上刚启动的进程
+  （"Unable to block on applications"），`AllumeCLI.run` 重试一次。
 - 面板位置假设 Allume 主窗口顶部 52pt 是标题栏/工具栏，窗口全屏或分屏时没有特别处理。
 - AX 坐标按主显示器左上角换算成 AppKit 坐标，多显示器下已考虑，但只跟踪 `AXFocusedWindow`（否则 `AXMainWindow`）。
 
@@ -295,8 +315,10 @@ frame 怎么读：`allume board-content <白板文档id> --format json` 一次�
 
 ```
 Package.swift                      SwiftPM executable，链接 Carbon
-Resources/Info.plist               LSUIElement 等；build-app.sh 复制进 .app
-scripts/build-app.sh, run.sh       构建、打包、签名、启动
+Resources/Info.plist               LSUIElement、图标名等；build-app.sh 复制进 .app
+Resources/AppIcon.icon/            Icon Composer 图标文档：icon.json + Assets/*.svg（由 scripts/make-icon-assets.py 生成）
+scripts/build-app.sh, run.sh       构建、打包（含 actool 编图标）、签名、启动
+scripts/make-icon-assets.py        画图标的四个 SVG 图层（三张卡片 + 回环线）
 Sources/AllumeCompanion/
   main.swift                       NSApplication 入口（.accessory）
   AppDelegate.swift                菜单栏项、权限申请、把各部件接起来

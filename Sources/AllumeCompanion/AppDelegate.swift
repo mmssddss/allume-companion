@@ -45,6 +45,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         tracker.start()
 
+        // Allume answered the ⌘C after the wait had given up: if the panel is still open with
+        // nothing selected, take the cards as if they had arrived in time.
+        SelectionReader.onLateSelection = { [weak self] cards in
+            guard let self, self.overlay.isPanelVisible, self.state.selectedCardIds.isEmpty, !cards.isEmpty else { return }
+            self.state.selectedCardIds = cards.map(\.id)
+            self.state.selectionFromAllume = true
+            self.state.selectionMessage = ""
+            self.state.appendLog("读取选中（迟到）：\(cards.count) 张 " + cards.map(\.id).joined(separator: ", "))
+            Task { @MainActor in
+                await self.runner.describeSelection()
+                await self.boardModel.refreshOthers(containing: self.state.selectedCardIds, reason: "late selection")
+            }
+        }
+
         // ⌘K: kVK_ANSI_K = 0x28. Registered only while Allume is frontmost (see tracker.onChange)
         // so other apps keep their own ⌘K.
         hotKey = HotKey(keyCode: 0x28, modifiers: UInt32(cmdKey))

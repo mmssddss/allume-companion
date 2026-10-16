@@ -39,7 +39,16 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   装入当前白板的卡片。⌘K 的 describeSelection 先查模型；撤销快照只在模型 2 秒内刷新过时用它，否则必须现查。
   后台调用用 `AllumeCLI.run(…, background: true)`，日志里是 `cli[bg]`；每次 ⌘K 打印一行"⌘K 统计"，前台应为 0。
   白板文档 id 的前缀等于它上面卡片 id 的 scope 前缀，可用来在同名白板间分辨。`open -W` 并发时偶发
-  "Unable to block on applications"，爬表时重试一次。
+  "Unable to block on applications"，`AllumeCLI.run` 统一重试一次。
+- Allume 画布上能直接选到内嵌子白板里的卡片，窗口标题仍是父白板：`BoardModel` 除当前白板外还保留最近选中过的其他白板
+  （`lookup` 跨白板找、`adopt` 收下回退路径读到的整块、`refreshOthers` 面板打开后在后台刷新它们）。
+- ⌘K 的面板显示时间几乎全是 `setFrame(display: true)` 的重排，AX 查窗口只要 1–2 ms；所以关面板时就 `rearm`（清输入框、
+  恢复全部命令、摆好尺寸），打开只剩 `orderFront`（5–15 ms）。日志行 `panel shown at …; setFrame X ms (relaid)` 出现
+  "(relaid)" 说明这次重排了。离屏快照（`ALLUME_SNAPSHOT`）渲染不出 `glassEffect`，看玻璃效果只能在屏幕上看。
 - 测试面板外观：`ALLUME_SELECT_IDS=… ALLUME_SNAPSHOT=/path.png open build/AllumeCompanion.app`，再 `kill -USR1`，
   面板会渲染成 PNG（`screencapture` 在这里没有屏幕录制权限）。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。
+- 图标：`Resources/AppIcon.icon`（Icon Composer 格式）由 build-app.sh 里的 `xcrun actool … --app-icon AppIcon` 编成
+  Assets.car + AppIcon.icns。`icon.json` 的 `groups` **第一个在最上层**（和 Icon Composer 界面一致）。想看系统真正渲染的
+  玻璃版：构建后用 `NSWorkspace.shared.icon(forFile: "build/AllumeCompanion.app")` 画到 PNG（`qlmanage -t` 对 .app 会卡死，
+  临时拼的假 .app 也渲染不出来）；icns 兜底只含 16/32/128/256 四档。改几何只改 `scripts/make-icon-assets.py` 再跑它。

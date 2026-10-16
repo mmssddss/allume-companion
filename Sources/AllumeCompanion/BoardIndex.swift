@@ -147,18 +147,13 @@ final class BoardIndex {
             var next: [Entry] = []
             for chunk in stride(from: 0, to: frontier.count, by: crawlConcurrency) {
                 let ids = Array(frontier[chunk..<min(chunk + crawlConcurrency, frontier.count)])
-                calls += ids.count // retries not counted; they are rare
+                calls += ids.count // AllumeCLI's own retries not counted; they are rare
                 let rows = await withTaskGroup(of: (String, [SubBoardRow]).self) { group in
                     for id in ids {
                         group.addTask {
                             let args = ["board-content", id, "--kinds", "subBoard", "--format", "json"]
-                            var r = await AllumeCLI.run(args, background: true)
-                            if !r.ok {
-                                // `open -W` occasionally fails to attach to the launched process
-                                // ("Unable to block on applications") when several run at once.
-                                Log.info("board index: board-content \(id) failed, retrying: \(r.stderr.split(separator: "\n").first ?? "")")
-                                r = await AllumeCLI.run(args, background: true)
-                            }
+                            // (AllumeCLI.run itself retries the occasional `open -W` attach failure.)
+                            let r = await AllumeCLI.run(args, background: true)
                             let rows = r.ok ? ((try? JSONDecoder().decode([SubBoardRow].self, from: Data(r.stdout.utf8))) ?? []) : []
                             if !r.ok { Log.info("board index: board-content \(id) failed: \(r.stderr.split(separator: "\n").first ?? "")") }
                             return (id, rows)
