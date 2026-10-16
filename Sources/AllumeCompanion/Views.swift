@@ -4,7 +4,6 @@ import SwiftUI
 struct CommandPanelView: View {
     @ObservedObject var state: AppState
     let runner: CommandRunner
-    @State private var confirmingDelete = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -42,7 +41,7 @@ struct CommandPanelView: View {
         VStack(alignment: .leading, spacing: 6) {
             selectionCommands
             Button(state.undoLabel.map { "撤销：\($0)" } ?? "撤销") { Task { await runner.undo() } }
-                .keyboardShortcut("4", modifiers: [])
+                .keyboardShortcut("3", modifiers: [])
                 .disabled(state.isRunning || state.undoLabel == nil)
         }
     }
@@ -55,23 +54,10 @@ struct CommandPanelView: View {
                 Button("排成 \(state.columns) 列") { Task { await runner.gatherGrid(columns: state.columns) } }
                     .keyboardShortcut("1", modifiers: [])
                 Stepper("", value: $state.columns, in: 1...12).labelsHidden()
-                Text("grid · x80 y80 · 间距 40").font(.caption).foregroundStyle(.tertiary)
+                Text("grid · 锚在选中区域左上角 · 间距 40").font(.caption).foregroundStyle(.tertiary)
             }
             Button("统一尺寸 200×150") { Task { await runner.resizeAll() } }
                 .keyboardShortcut("2", modifiers: [])
-            if confirmingDelete {
-                HStack {
-                    Text("确认删除 \(state.selectedCardIds.count) 张卡？").foregroundStyle(.red)
-                    Button("删除", role: .destructive) {
-                        confirmingDelete = false
-                        Task { await runner.deleteAll() }
-                    }
-                    Button("取消") { confirmingDelete = false }.keyboardShortcut(.cancelAction)
-                }
-            } else {
-                Button("删除…", role: .destructive) { confirmingDelete = true }
-                    .keyboardShortcut("3", modifiers: [])
-            }
         }
         .disabled(state.isRunning || state.selectedCardIds.isEmpty)
     }

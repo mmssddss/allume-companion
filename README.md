@@ -18,7 +18,7 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
   找不到就 ad-hoc。**ad-hoc 签名每次重新构建都会让 macOS 丢掉辅助功能授权**，要重新勾选。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
 - 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘K；`kill -USR2 ...` 等于点"排成 N 列"
-  （启动时设 `ALLUME_USR2=resize` 或 `delete` 可改成另两个按钮）；`kill -INFO ...` 等于点"撤销"；
+  （启动时设 `ALLUME_USR2=resize` 可改成"统一尺寸"）；`kill -INFO ...` 等于点"撤销"；
   `ALLUME_SELECT_IDS=a,b,c open build/AllumeCompanion.app` 启动时直接预设选中的卡片 id，不经过 ⌘C；
   用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志。
 - 它是菜单栏常驻 app（无 Dock 图标），从菜单栏图标里退出。
@@ -28,7 +28,7 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 | 权限 | 用途 | 没有会怎样 |
 |---|---|---|
 | 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，面板才能贴在窗口顶部；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C | 面板不出现，⌘K 读不到选中 |
-| Allume → Preferences → Command Line 里的读写模式 | `card-gather` / `card-move` / `delete` 都是写操作 | 面板里显示 `allume card-gather is unavailable: the CLI is in read-only mode`。如果设置里已经是 read-write 还报这个，见下面"CLI 为什么要用 open 启动" |
+| Allume → Preferences → Command Line 里的读写模式 | `card-gather` / `card-move` 都是写操作 | 面板里显示 `allume card-gather is unavailable: the CLI is in read-only mode`。如果设置里已经是 read-write 还报这个，见下面"CLI 为什么要用 open 启动" |
 
 首次启动会弹系统提示；也可以从菜单栏图标 → "打开辅助功能设置…"。不需要"输入监控"：全局快捷键用的是
 Carbon `RegisterEventHotKey`，不需要额外权限。注册了的全局快捷键会在所有 app 里吞掉这个按键，
@@ -97,24 +97,23 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 |---|---|
 | 排成 N 列（默认 3，Stepper 可调） | `allume card-gather --ids a,b,c --layout grid --columns N --x 80 --y 80 --spacing 40` |
 | 统一尺寸 200×150 | 逐张 `allume card-move --id <id> --width 200 --height 150` |
-| 删除…（面板内二次确认） | 逐张 `allume delete <id>`（软删除，可 `allume undelete <id>` 恢复） |
 | 撤销：<上一步> | 见下面"撤销上一步" |
 
-按键 1/2/3/4 分别对应四个按钮。面板是 `NSPanel(.nonactivatingPanel)`，能接键盘（Esc 关闭、1/2/3/4 触发按钮）但不会把本 app 激活，
+按键 1/2/3 分别对应三个按钮。不提供删除：Allume 自己的 Delete 键就是删除，而且带原生 ⌘Z。
+面板是 `NSPanel(.nonactivatingPanel)`，能接键盘（Esc 关闭、1/2/3 触发按钮）但不会把本 app 激活，
 Allume 保持前台。面板只在 ⌘K 之后出现，贴在 Allume 主窗口顶部居中，跟随窗口移动；Allume 不在前台就收起。
 面板头部显示当前白板名（来自 Allume 的窗口标题）。
 
 ### 撤销上一步
 
-**为什么 Allume 自己的 ⌘Z 不管用**：CLI 的删除和移动走的是 Allume 的 helper 管道（CLI 进程 → app 内的命令处理器
+**为什么 Allume 自己的 ⌘Z 不管用**：CLI 的移动走的是 Allume 的 helper 管道（CLI 进程 → app 内的命令处理器
 → 直接改文档），不经过界面层的 undo manager，所以在 Allume 里按 ⌘Z 撤不掉 CLI 做的事（实测）。
-只能用 CLI 自己把状态改回去：`allume undelete <id>` 和 `allume card-move`。
+只能用 CLI 自己把状态改回去：`allume card-move`（如果用 CLI 删过卡，`allume undelete <id>` 能恢复）。
 
-于是 `CommandRunner` 在每条命令执行前先记下恢复所需的状态，面板上多一个"撤销：<上一步名字>"按钮（按键 4）：
+于是 `CommandRunner` 在每条命令执行前先记下恢复所需的状态，面板上多一个"撤销：<上一步名字>"按钮（按键 3）：
 
 | 命令 | 执行前记录 | 撤销 = |
 |---|---|---|
-| 删除 | 删成功的 id 列表 | 逐张 `allume undelete <id>`（Allume 会把卡片放回原 frame，实测一致），并把这些 id 放回"选中" |
 | 排成 N 列 / 统一尺寸 | 每张卡当前的 frame（x,y,w,h） | 逐张 `allume card-move --id … --x … --y … --width … --height …` 回到原值 |
 
 frame 怎么读：`allume board-content <白板文档id> --format json` 一次给出整块白板上所有卡片的 `frame`。

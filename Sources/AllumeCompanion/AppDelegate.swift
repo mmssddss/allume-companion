@@ -53,7 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state.appendLog("测试：预设选中 \(state.selectedCardIds.count) 张 " + state.selectedCardIds.joined(separator: ", "))
         }
         // Test hook: SIGUSR2 runs a panel command on the current selection, like clicking its button.
-        // `ALLUME_USR2` picks which: gather (default), resize, delete.
+        // `ALLUME_USR2` picks which: gather (default), resize.
         signal(SIGUSR2, SIG_IGN)
         usr2Source = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
         usr2Source?.setEventHandler { [weak self] in
@@ -64,7 +64,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 switch env["ALLUME_USR2"] ?? "gather" {
                 case "resize": await self.runner.resizeAll()
-                case "delete": await self.runner.deleteAll()
                 default: await self.runner.gatherGrid(columns: self.state.columns)
                 }
                 Log.info("panel log:\n" + self.state.log)

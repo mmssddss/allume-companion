@@ -1,12 +1,13 @@
 import Foundation
 
-/// The three starter commands, each a thin wrapper over the CLI, plus a one-level undo.
+/// The panel commands, each a thin wrapper over the CLI, plus a one-level undo. Deleting is
+/// deliberately not offered: Allume's own Delete key does that, with its own ⌘Z.
 /// Output is appended to `state.log`.
 ///
 /// Undo: Allume's own ⌘Z cannot revert what the CLI does (the CLI goes through Allume's helper
 /// pipeline, not its undo manager), so before every command we record what is needed to reverse
-/// it ourselves. Deleting records the ids (undo = `undelete` each); gathering and resizing record
-/// each card's current frame via `board-content --format json` (undo = `card-move` back). Only the
+/// it ourselves: gathering and resizing record each card's current frame via
+/// `board-content --format json` (undo = `card-move` back). Only the
 /// most recent step is kept, and undoing is itself not undoable.
 @MainActor
 final class CommandRunner {
@@ -31,8 +32,6 @@ final class CommandRunner {
         let label: String
         /// CLI invocations that reverse the step, run in order.
         let commands: [[String]]
-        /// Selection to restore after undoing (deleted cards drop out of the selection).
-        let restoreSelection: [String]?
     }
 
     private var undoEntry: UndoEntry? {
@@ -127,8 +126,7 @@ final class CommandRunner {
         guard await body(before) else { return }
         guard !before.isEmpty else { state.appendLog("没有可撤销的记录"); return }
         undoEntry = UndoEntry(label: label,
-                              commands: ids.compactMap { id in before[id].map { moveBack(id, to: $0) } },
-                              restoreSelection: nil)
+                              commands: ids.compactMap { id in before[id].map { moveBack(id, to: $0) } })
         state.appendLog("可撤销：\(label)")
     }
 
@@ -168,23 +166,6 @@ final class CommandRunner {
         }
     }
 
-    func deleteAll() async {
-        await guarded {
-            let ids = state.selectedCardIds
-            var deleted: [String] = []
-            for id in ids where await exec(["delete", id]).ok {
-                deleted.append(id)
-            }
-            state.appendLog("已删除 \(deleted.count)/\(ids.count) 张（可用 allume undelete <id> 恢复）")
-            state.selectedCardIds.removeAll { deleted.contains($0) }
-            guard !deleted.isEmpty else { return }
-            undoEntry = UndoEntry(label: "删除 \(deleted.count) 张",
-                                  commands: deleted.map { ["undelete", $0] },
-                                  restoreSelection: ids)
-            state.appendLog("可撤销：删除 \(deleted.count) 张")
-        }
-    }
-
     // MARK: - Undo
 
     var canUndo: Bool { undoEntry != nil }
@@ -197,7 +178,6 @@ final class CommandRunner {
         state.appendLog("撤销：\(entry.label)")
         var failed = 0
         for cmd in entry.commands where !(await exec(cmd).ok) { failed += 1 }
-        if let sel = entry.restoreSelection, failed == 0 { state.selectedCardIds = sel }
         state.appendLog(failed == 0 ? "已撤销：\(entry.label)" : "撤销 \(entry.label)：\(failed)/\(entry.commands.count) 条失败")
     }
 }
