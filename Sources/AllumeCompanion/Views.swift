@@ -27,7 +27,6 @@ struct PillView: View {
     private var title: String {
         if !state.axTrusted { return "需要辅助功能权限" }
         if !state.boardTitle.isEmpty { return state.boardTitle }
-        if !state.boardId.isEmpty { return String(state.boardId.suffix(12)) }
         return "Allume"
     }
 }

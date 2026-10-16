@@ -6,7 +6,6 @@ import Combine
 final class AppState: ObservableObject {
     @Published var axTrusted = false
     @Published var allumeRunning = false
-    @Published var boardId = ""
     @Published var boardTitle = ""
     @Published var selectedCardIds: [String] = []
     @Published var selectionMessage = ""

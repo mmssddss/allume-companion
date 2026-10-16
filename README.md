@@ -17,7 +17,8 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 - 签名：优先用钥匙串里的 Apple Development / Developer ID 证书（可用 `CODESIGN_IDENTITY` 指定），
   找不到就 ad-hoc。**ad-hoc 签名每次重新构建都会让 macOS 丢掉辅助功能授权**，要重新勾选。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
-- 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘⇧P；`kill -USR2 ...` 等于点"排成 N 列"。
+- 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘⇧P；`kill -USR2 ...` 等于点"排成 N 列"；
+  用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志。
 - 它是菜单栏常驻 app（无 Dock 图标），从菜单栏图标里退出。
 
 ## 需要的权限
@@ -25,7 +26,7 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 | 权限 | 用途 | 没有会怎样 |
 |---|---|---|
 | 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，浮层才能贴上去；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C | 浮层不显示，⌘⇧P 读不到选中 |
-| Allume 的 CLI 读写模式 | `card-gather` / `card-move` / `delete` 都是写操作，CLI 默认只读 | 面板里显示 `exit 7`：`allume card-gather is unavailable: the CLI is in read-only mode`。在 Allume → Preferences → Command Line 里切到 read-write |
+| Allume → Preferences → Command Line 里的读写模式 | `card-gather` / `card-move` / `delete` 都是写操作 | 面板里显示 `allume card-gather is unavailable: the CLI is in read-only mode`。如果设置里已经是 read-write 还报这个，见下面"CLI 为什么要用 open 启动" |
 
 首次启动会弹系统提示；也可以从菜单栏图标 → "打开辅助功能设置…"。不需要"输入监控"：全局快捷键用的是
 Carbon `RegisterEventHotKey`，不需要额外权限。
@@ -34,20 +35,33 @@ Carbon `RegisterEventHotKey`，不需要额外权限。
 
 ### 当前白板
 
-Allume 把最后浏览的文档 id 写在自己的 defaults 里：
+Allume 主窗口的 Accessibility 标题（`kAXTitleAttribute`）就是当前白板的名字（例如 "Project"），
+`AllumeTracker` 在跟踪窗口位置的同时顺手读出来，订阅了 `kAXTitleChangedNotification`，导航后立即更新。
 
-```bash
-defaults read com.musesoftware.museios-setapp lastViewedDocumentId
-# 204d2cd29de354f8b3c1e157491a26ae:204d2cd29d7ea8528dcc6dd0f9c70381   (scope:id 形式的 qualified id)
-```
+走过的弯路（都在另一个进程里能用，在伴生 app 里不能用，原因见下面"CLI 为什么要用 open 启动"）：
 
-导航后约 1–2 秒更新。Allume 是沙盒 app，`CFPreferencesCopyAppValue` 跨 app 读不到，所以直接每秒读
-`~/Library/Containers/com.musesoftware.museios-setapp/Data/Library/Preferences/com.musesoftware.museios-setapp.plist`。
+- `defaults read com.musesoftware.museios-setapp lastViewedDocumentId` 给出当前白板的 qualified id，
+  但 Allume 是沙盒 app，它的容器 `~/Library/Containers/com.musesoftware.museios-setapp/` 受
+  macOS 保护，伴生 app（以及它启动的 `defaults`、`plutil`）读到的是 "you don't have permission" / "Domain not found"。
+  在终端里能读，是因为终端的 responsible process（Claude / Terminal）被授予了完全磁盘访问之类的权限。
+- 没有 CLI 命令能用白板 id 直接查标题（`card-content <白板id>` 报 "No card"，`search` 不接受空 query）；
+  能做的是从 `list-workspaces` 的 `rootBoardId` 用 `board-content --kinds subBoard` BFS 爬全部子白板
+  （79 个白板约 2.4 秒）。现在不需要了。
 
-没有任何 CLI 命令能用白板 id 直接查标题（`card-content` 对白板 id 报 "No card"，`board-content` 只返回卡片），
-所以启动后从 `list-workspaces` 的 `rootBoardId` 出发，用 `board-content <id> --kinds subBoard --format json`
-BFS 爬一遍所有子白板，建 id → 标题表（79 个白板约 2.4 秒），遇到没见过的 id 再爬一次（最多 30 秒一次）。
-收件箱用 `inboxId` / `personalInboxId` 对上。
+### CLI 为什么要用 `open` 启动
+
+`/usr/local/bin/allume` 是 `Allume.app/Contents/MacOS/allume-cli` 的符号链接，这个 CLI **自己也是沙盒 app**
+（entitlements 里有 `com.apple.security.app-sandbox` 和 app group `group.T68Z94627S.com.musesoftware.museios-setapp`）。
+它在连接 Allume 之前先读 app group 偏好里的 `isCLIReadOnly`（文件在
+`~/Library/Group Containers/group.T68Z94627S.com.musesoftware.museios-setapp/Library/Preferences/`），读不到就按只读处理。
+
+macOS 对 group container 的访问按 **responsible process** 判定：伴生 app 用 `Process` 直接启动 CLI 时，
+responsible process 是伴生 app，读取被拒，于是所有写命令都报
+`allume card-gather is unavailable: the CLI is in read-only mode`（exit 7），哪怕 Preferences 里已经是 read-write。
+
+解决：`AllumeCLI` 用 `open -W -n --stdout <f> --stderr <f> -a <allume-cli> --args …` 经 LaunchServices 启动 CLI，
+CLI 成为自己的 responsible process，靠自己的 entitlement 读 group container，写命令就通了。
+代价是每次调用约 150ms（直接 `Process` 约 30ms），而且 `open` 不转发 CLI 的退出码，所以 stderr 里出现 `error` 就当失败。
 
 ### 选中的卡片（剪贴板旁路）
 
@@ -94,8 +108,8 @@ Allume 保持前台。浮层只在 Allume 是前台 app 且主窗口可见时显
 - **剪贴板会被短暂覆盖**：中间约 50ms 剪贴板里是 Allume 的卡片数据，之后恢复。恢复是按 item/类型逐个写回，
   对某些带 promise（延迟提供）的剪贴板内容可能恢复不完整。
 - **Allume 的 ⌘C 会不会有副作用**（例如把卡片标记为"已复制"）未知，目前看没有。
-- `lastViewedDocumentId` 是从 plist 文件读的，cfprefsd 落盘有延迟（实测 1–2 秒）；Allume 若改存储位置就失效。
-- 白板标题靠爬 `board-content`，新建的白板要等下一次爬取（最多 30 秒）才有标题，之前只显示 id 尾巴。
+- 白板标题来自 Allume 的窗口标题，只有名字没有 id；Allume 若改成固定窗口标题就失效。
+- CLI 经 `open` 启动依赖 `open` 的 `--stdout/--stderr/-W` 行为，退出码靠 stderr 猜。
 - 浮层位置假设 Allume 主窗口顶部 52pt 是标题栏/工具栏，窗口全屏或分屏时没有特别处理。
 - AX 坐标按主显示器左上角换算成 AppKit 坐标，多显示器下已考虑，但只跟踪 `AXFocusedWindow`（否则 `AXMainWindow`）。
 
@@ -109,11 +123,11 @@ Sources/AllumeCompanion/
   main.swift                       NSApplication 入口（.accessory）
   AppDelegate.swift                菜单栏项、权限申请、把各部件接起来
   AppState.swift                   ObservableObject：白板、选中、日志
-  AllumeTracker.swift              AXObserver 跟踪 Allume 窗口（含 1s 兜底轮询）
-  BoardWatcher.swift               读 lastViewedDocumentId + BFS 爬标题
+  AllumeTracker.swift              AXObserver 跟踪 Allume 窗口位置/激活/标题（含 1s 兜底轮询）
+  AXDump.swift                     调试：把 Allume 的 AX 树写进日志
   SelectionReader.swift            剪贴板快照 → ⌘C → 解析 → 恢复
   HotKey.swift                     Carbon 全局快捷键 ⌘⇧P
-  AllumeCLI.swift                  Process 调 allume
+  AllumeCLI.swift                  经 open -W 调 allume（原因见上）
   CommandRunner.swift              三条命令
   OverlayController.swift          两个 NSPanel（标题胶囊 + 命令面板）及定位
   Views.swift                      SwiftUI：PillView、CommandPanelView

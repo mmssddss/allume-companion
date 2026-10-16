@@ -9,6 +9,10 @@ final class AllumeTracker {
     struct WindowInfo: Equatable {
         var frame: CGRect
         var isActive: Bool
+        /// Allume titles its window with the current board's name (e.g. "Project"), which is the
+        /// only permission-free way to learn the current board: its container (and so
+        /// `lastViewedDocumentId`) is unreadable from another app, see AllumeCLI.
+        var title: String
     }
 
     var onChange: ((WindowInfo?) -> Void)?
@@ -79,7 +83,8 @@ final class AllumeTracker {
                      kAXWindowMiniaturizedNotification, kAXWindowDeminiaturizedNotification,
                      kAXWindowCreatedNotification, kAXUIElementDestroyedNotification,
                      kAXApplicationActivatedNotification, kAXApplicationDeactivatedNotification,
-                     kAXApplicationHiddenNotification, kAXApplicationShownNotification] {
+                     kAXApplicationHiddenNotification, kAXApplicationShownNotification,
+                     kAXTitleChangedNotification] {
             AXObserverAddNotification(obs, element, name as CFString, refcon)
         }
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
@@ -111,7 +116,9 @@ final class AllumeTracker {
         // AX coordinates: origin top-left of the primary display. Convert to AppKit.
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let frame = CGRect(x: pos.x, y: primaryHeight - pos.y - size.height, width: size.width, height: size.height)
-        return WindowInfo(frame: frame, isActive: app.isActive)
+        var titleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
+        return WindowInfo(frame: frame, isActive: app.isActive, title: titleRef as? String ?? "")
     }
 
     private func axValue<T>(_ element: AXUIElement, _ attr: String, _ type: AXValueType) -> T? {

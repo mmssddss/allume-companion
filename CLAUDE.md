@@ -17,7 +17,9 @@ macOS 菜单栏 app，贴在 Allume 窗口上的浮层 + 命令面板，所有�
 
 ## 已知事实（实测）
 
-- `lastViewedDocumentId` 跨 app 用 CFPreferences 读是 nil，必须读容器里的 plist 文件。
-- `allume search` 不接受空 query；白板标题只能靠 `board-content --kinds subBoard` 从根白板 BFS。
-- `allume card-content <白板id>` 报 "No card"。
+- Allume 的容器和 group container 对伴生 app 及其子进程都不可读（按 responsible process 判定），所以
+  `lastViewedDocumentId` 读不到；当前白板标题取 Allume 窗口的 AX 标题。
+- CLI 自己是沙盒 app，直接 `Process` 启动时读不到 `isCLIReadOnly` → 一律只读（exit 7）；必须经 `open -W` 启动。
+- `allume search` 不接受空 query；`allume card-content <白板id>` 报 "No card"。
+- Allume 的 AX 树里卡片标题是 AXTextField 的 value（subBoard 也有），但没有选中状态，选中仍靠 ⌘C + 剪贴板。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。

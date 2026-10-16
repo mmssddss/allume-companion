@@ -7,7 +7,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let state = AppState()
     private var statusItem: NSStatusItem!
     private var tracker = AllumeTracker()
-    private var boardWatcher = BoardWatcher()
     private var hotKey: HotKey?
     private var runner: CommandRunner!
     private var overlay: OverlayController!
@@ -23,18 +22,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         tracker.onChange = { [weak self] info in
             Task { @MainActor in
-                Log.info("allume window: \(info.map { "\($0.frame) active=\($0.isActive)" } ?? "none")")
+                Log.info("allume window: \(info.map { "\($0.frame) active=\($0.isActive) title=\($0.title)" } ?? "none")")
                 self?.state.allumeRunning = info != nil
+                self?.state.boardTitle = info?.title ?? ""
                 self?.overlay.update(window: info)
             }
         }
         tracker.start()
-
-        boardWatcher.onChange = { [weak self] id, title in
-            self?.state.boardId = id
-            self?.state.boardTitle = title
-        }
-        boardWatcher.start()
 
         // ⌘⇧P: kVK_ANSI_P = 0x23
         hotKey = HotKey(keyCode: 0x23, modifiers: UInt32(cmdKey | shiftKey))
@@ -50,7 +44,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         usr2Source = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
         usr2Source?.setEventHandler { [weak self] in
             guard let self else { return }
-            Task { @MainActor in await self.runner.gatherGrid(columns: self.state.columns); Log.info("log:\n" + self.state.log) }
+            if ProcessInfo.processInfo.environment["ALLUME_AXDUMP"] != nil, let pid = self.tracker.pid {
+                AXDump.dump(pid: pid); return
+            }
+            Task { @MainActor in
+                await self.runner.gatherGrid(columns: self.state.columns)
+                Log.info("panel log:\n" + self.state.log)
+            }
         }
         usr2Source?.resume()
 
