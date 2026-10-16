@@ -24,6 +24,9 @@ enum CommandKind: Equatable {
     case gather(layout: String, columns: Int, order: SortOrder)   // card-gather --layout grid|row|column
     case resize(width: Int, height: Int)        // card-move --width --height on each card (one of `sizes`)
     case undo
+    /// The two navigation lists; the panel view switches into them instead of calling the runner.
+    case recentBoards
+    case allTodos
 }
 
 struct CommandSpec {
@@ -60,7 +63,22 @@ enum CommandCatalog {
         ("小", 160, 120), ("中", 200, 150), ("大", 280, 210),
     ]
 
+    /// The two navigation rows sit first, always: ⌘K ⏎ is "最近去过", ⌘K ↓ ⏎ is "全部待办",
+    /// whatever is selected, so they can be hit from muscle memory. Their hints are filled in
+    /// live by the panel (last board, number of todos).
     static let specs: [CommandSpec] = [
+        CommandSpec(id: "recent", title: "最近去过", hint: "回到之前看过的白板",
+                    symbol: "clock.arrow.circlepath",
+                    aliases: ["最近", "去过", "足迹", "回去", "历史", "刚才", "recent", "back", "history", "visited", "zuijin", "zuji"],
+                    needsSelection: false,
+                    build: { _ in .recentBoards },
+                    display: { _ in "最近去过" }),
+        CommandSpec(id: "todos", title: "全部待办", hint: "所有白板上正文以 @todo 开头的卡",
+                    symbol: "checklist",
+                    aliases: ["待办", "todo", "todos", "任务", "到期", "截止", "过期", "@todo", "tasks", "due", "daiban", "renwu"],
+                    needsSelection: false,
+                    build: { _ in .allTodos },
+                    display: { _ in "全部待办" }),
         CommandSpec(id: "grid", title: "排成 N 列", hint: "网格，锚在选中区域左上角，可加数字：grid 4 / 排成4列",
                     symbol: "square.grid.3x3",
                     aliases: ["排成", "排列", "整理", "网格", "列", "grid", "arrange", "columns", "sort", "tidy", "pailie", "wangge", "zhengli"],

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// The panel commands, each a thin wrapper over the CLI, plus a one-level undo. Deleting is
@@ -207,6 +208,21 @@ final class CommandRunner {
         case .gather(let layout, let columns, let order): await gather(layout: layout, columns: columns, order: order)
         case .resize(let w, let h): await resizeAll(width: w, height: h)
         case .undo: await undo()
+        case .recentBoards, .allTodos: break // lists shown by the panel view itself
+        }
+    }
+
+    // MARK: - Jumping to a board
+
+    /// `allume open <board>` and Allume to the front; the panel closes, since the user is leaving.
+    func openBoard(id: String, title: String) async {
+        state.requestHidePanel?()
+        let r = await exec(["open", id])
+        if r.ok {
+            state.setStatus("已打开「\(title)」")
+            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: AllumeTracker.bundleID).first {
+                app.activate()
+            }
         }
     }
 

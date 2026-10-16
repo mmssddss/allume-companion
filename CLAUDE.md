@@ -56,7 +56,12 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   恢复全部命令、摆好尺寸），打开只剩 `orderFront`（5–15 ms）。日志行 `panel shown at …; setFrame X ms (relaid)` 出现
   "(relaid)" 说明这次重排了。离屏快照（`ALLUME_SNAPSHOT`）渲染不出 `glassEffect`，看玻璃效果只能在屏幕上看。
 - 测试面板外观：`ALLUME_SELECT_IDS=… ALLUME_SNAPSHOT=/path.png open build/AllumeCompanion.app`，再 `kill -USR1`，
-  面板会渲染成 PNG（`screencapture` 在这里没有屏幕录制权限）。
+  面板会渲染成 PNG（`screencapture` 在这里没有屏幕录制权限）。加 `ALLUME_PANEL_MODE=todos|recent` 直接打开那张列表。
+- 导航三件套（README "导航"）：`VisitTrail`（trail.json）由 `BoardModel.onSwitched` 喂；`TodoIndex`（todos.json）在
+  `BoardIndex.onCrawled` 之后扫全部白板（`--filter @todo --kinds text`，CLI 的 filter 接受 `@`），当前白板由 `onLoaded` 用模型行
+  免费更新；`DueReminders`（reminders.json）用 `UNUserNotificationCenter`，只在 .app 包里可用（裸可执行文件没有 bundle id 会崩，
+  `available` 挡住）。通知权限被拒时 `getNotificationSettings` 返回 status 1，`schedule` 每次现查，设置里打开后下次扫描就生效。
+  面板里这两行永远排最前（`CommandCatalog.specs` 前两个），面板模式在 `AppState.panelMode`，Esc 在列表里是返回不是关闭。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。
 - 图标：`Resources/AppIcon.icon`（Icon Composer 格式）由 build-app.sh 里的 `xcrun actool … --app-icon AppIcon` 编成
   Assets.car + AppIcon.icns。`icon.json` 的 `groups` **第一个在最上层**（和 Icon Composer 界面一致）。想看系统真正渲染的

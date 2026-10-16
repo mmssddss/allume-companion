@@ -35,7 +35,11 @@ final class OverlayController {
         self.state = state
         panel = Self.makePanel(size: Self.panelSize)
         panel.contentView = NSHostingView(rootView: CommandPanelView(state: state, runner: runner))
-        panel.onEscape = { [weak self] in self?.hidePanel() }
+        // Esc inside a navigation list goes back to the commands; from the commands it closes.
+        panel.onEscape = { [weak self] in
+            guard let self else { return }
+            if self.state.panelMode != .commands { self.state.panelMode = .commands } else { self.hidePanel() }
+        }
         NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.hidePanel() }
         }

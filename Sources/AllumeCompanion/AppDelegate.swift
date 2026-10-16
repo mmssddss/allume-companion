@@ -12,6 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var overlay: OverlayController!
     private var boardIndex: BoardIndex!
     private var boardModel: BoardModel!
+    private var trail: VisitTrail!
+    private var todoIndex: TodoIndex!
+    private var reminders: DueReminders!
+    private var todoTimer: Timer?
     private var trustTimer: Timer?
     private var usr1Source: DispatchSourceSignal?
     private var usr2Source: DispatchSourceSignal?
@@ -26,6 +30,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         boardModel = BoardModel(index: boardIndex, thumbnails: runner.thumbnails)
         boardModel.onLoaded = { [weak self] in self?.runner.refreshSelectionFromModel() }
         runner.boardModel = boardModel
+        state.requestHidePanel = { [weak self] in self?.overlay.hidePanel() }
+
+        // Navigation lists: where the user has been (VisitTrail, fed by board switches) and
+        // every @todo card (TodoIndex, one filtered board-content per board after each crawl
+        // and every TodoIndex.interval; the current board's slice comes free with each model
+        // load). Dated todos become system notifications (DueReminders).
+        trail = VisitTrail()
+        todoIndex = TodoIndex()
+        reminders = DueReminders()
+        state.recentBoards = trail.recent(excluding: nil)
+        state.todos = todoIndex.sorted
+        boardModel.onSwitched = { [weak self] id, title in
+            guard let self else { return }
+            self.trail.record(boardId: id, title: title)
+            self.state.recentBoards = self.trail.recent(excluding: id)
+        }
+        boardModel.onLoaded = { [weak self] in
+            guard let self else { return }
+            self.runner.refreshSelectionFromModel()
+            if let id = self.boardModel.boardId {
+                self.todoIndex.adopt(boardId: id, boardTitle: self.boardModel.title, rows: self.boardModel.rows)
+            }
+        }
+        todoIndex.onChanged = { [weak self] in
+            guard let self else { return }
+            self.state.todos = self.todoIndex.sorted
+            self.reminders.schedule(self.todoIndex.items)
+        }
+        let afterCrawl = boardIndex.onCrawled
+        boardIndex.onCrawled = { [weak self] in
+            afterCrawl?()
+            guard let self else { return }
+            self.todoIndex.refresh(index: self.boardIndex, reason: "index crawled")
+        }
+        todoTimer = Timer.scheduledTimer(withTimeInterval: TodoIndex.interval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.state.allumeRunning else { return }
+                self.todoIndex.refresh(index: self.boardIndex, reason: "periodic")
+            }
+        }
+        reminders.openBoard = { [weak self] id, title in
+            guard let self else { return }
+            Task { await self.runner.openBoard(id: id, title: title) }
+        }
+        reminders.onAuthorized = { [weak self] in
+            guard let self else { return }
+            self.reminders.schedule(self.todoIndex.items)
+        }
+        reminders.start()
         boardIndex.refresh(reason: "launch")
         overlay.prewarm()
         setupStatusItem()
@@ -86,6 +139,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     stats.panelShown()
                     // `ALLUME_SNAPSHOT=/path.png` also writes a rendering of the panel there
                     // (screencapture needs Screen Recording; this does not).
+                    // `ALLUME_PANEL_MODE=todos|recent` opens straight into that list.
+                    switch env["ALLUME_PANEL_MODE"] {
+                    case "todos": self.state.panelMode = .allTodos
+                    case "recent": self.state.panelMode = .recentBoards
+                    default: break
+                    }
                     if let path = env["ALLUME_SNAPSHOT"], !path.isEmpty {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.overlay.snapshot(to: path) }
                     }
@@ -245,13 +304,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "Allume Companion")
         let menu = NSMenu()
         menu.addItem(withTitle: "读取选中并打开面板  ⌘K", action: #selector(menuRead), keyEquivalent: "")
+        menu.addItem(withTitle: "最近去过…", action: #selector(menuRecent), keyEquivalent: "")
+        menu.addItem(withTitle: "全部待办…", action: #selector(menuTodos), keyEquivalent: "")
+        menu.addItem(withTitle: "重新扫描待办", action: #selector(menuRescan), keyEquivalent: "")
         menu.addItem(withTitle: "打开辅助功能设置…", action: #selector(openAXSettings), keyEquivalent: "")
+        menu.addItem(withTitle: "打开通知设置…（到期提醒）", action: #selector(openNotificationSettings), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出 Allume Companion", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
     }
 
     @objc private func menuRead() { readSelectionAndShow() }
+    @objc private func menuRecent() { state.panelMode = .recentBoards; readSelectionAndShow() }
+    @objc private func menuTodos() { state.panelMode = .allTodos; readSelectionAndShow() }
+    @objc private func menuRescan() { todoIndex.refresh(index: boardIndex, reason: "menu") }
+
+    @objc private func openNotificationSettings() { DueReminders.openSettings() }
 
     @objc private func openAXSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {

@@ -44,6 +44,15 @@ final class AppState: ObservableObject {
     @Published var columns = 3
     /// Name of the step the "撤销" button would revert; nil when there is nothing to undo.
     @Published var undoLabel: String?
+    /// Which list the panel shows: the commands, or one of the two navigation lists.
+    enum PanelMode: Equatable { case commands, recentBoards, allTodos }
+    @Published var panelMode: PanelMode = .commands
+    /// Boards visited, most recent first, without the current one (VisitTrail; refreshed on switch).
+    @Published var recentBoards: [VisitTrail.Visit] = []
+    /// Every @todo card in the workspace, due first (TodoIndex.sorted).
+    @Published var todos: [TodoItem] = []
+    /// Set by AppDelegate: closes the panel (a jump command leaves it).
+    var requestHidePanel: (() -> Void)?
 
     func setStatus(_ s: String, error: Bool = false) {
         status = s

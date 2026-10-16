@@ -28,14 +28,29 @@ enum PanelMetrics {
     static let row: CGFloat = 46
     static let listPadding: CGFloat = 16
     static let footer: CGFloat = 30
-    static let maxRows = 6
+    static let maxRows = 8
     static func height(forRows n: Int) -> CGFloat {
         searchRow + 1 + CGFloat(max(1, min(n, maxRows))) * row + listPadding + footer
     }
 }
 
+/// One row of the panel, whatever list is showing: a command, a recently visited board, or a
+/// todo. `run` is what ⏎ does.
+struct PanelRow: Identifiable {
+    let id: String
+    let symbol: String
+    let title: String
+    let hint: String
+    /// Short status at the right edge (a todo's "今天" / "已过期 2 天"); nil for most rows.
+    var trailing: String? = nil
+    var trailingIsUrgent = false
+    let run: () -> Void
+}
+
 /// Spotlight-style command panel: a stack of the selected cards on the left, a command field,
-/// and the matching commands below. ↑/↓ pick, ⏎ runs, Esc or ⌘K closes.
+/// and the matching rows below. ↑/↓ pick, ⏎ runs, Esc or ⌘K closes. Two rows are not commands
+/// but lists ("最近去过", "全部待办"): ⏎ on them swaps the rows for that list (filtered by what
+/// is typed), ⏎ on a list row jumps to its board, Esc or ⌫ on an empty field comes back.
 struct CommandPanelView: View {
     @ObservedObject var state: AppState
     let runner: CommandRunner
@@ -46,6 +61,53 @@ struct CommandPanelView: View {
     private var matches: [CommandMatch] {
         CommandCatalog.matches(for: query).filter { m in
             !m.spec.needsSelection || !state.selectedCardIds.isEmpty || state.selectionPending
+        }
+    }
+
+    private var rows: [PanelRow] {
+        switch state.panelMode {
+        case .commands: return matches.map(commandRow)
+        case .recentBoards: return filtered(state.recentBoards.map(boardRow))
+        case .allTodos: return filtered(state.todos.map(todoRow))
+        }
+    }
+
+    private func filtered(_ rows: [PanelRow]) -> [PanelRow] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !q.isEmpty else { return rows }
+        return rows.filter { $0.title.lowercased().contains(q) || $0.hint.lowercased().contains(q) }
+    }
+
+    private func commandRow(_ m: CommandMatch) -> PanelRow {
+        var hint = m.spec.hint
+        if case .recentBoards = m.kind {
+            hint = state.recentBoards.first.map { "上一站「\($0.title)」· \(relativeTime($0.at))" } ?? "还没有足迹（切换白板时会记下来）"
+        } else if case .allTodos = m.kind {
+            let due = state.todos.filter { ($0.daysLeft() ?? 1) <= 0 }.count
+            hint = state.todos.isEmpty ? "没有正文以 @todo 开头的卡" : "\(state.todos.count) 条" + (due > 0 ? "，\(due) 条已到期" : "")
+        }
+        return PanelRow(id: m.id, symbol: m.spec.symbol, title: m.title, hint: hint) {
+            switch m.kind {
+            case .recentBoards: state.panelMode = .recentBoards
+            case .allTodos: state.panelMode = .allTodos
+            default: Task { await runner.run(m.kind) }
+            }
+        }
+    }
+
+    private func boardRow(_ v: VisitTrail.Visit) -> PanelRow {
+        PanelRow(id: v.boardId, symbol: "rectangle.on.rectangle", title: v.title.isEmpty ? "（无标题白板）" : v.title,
+                 hint: relativeTime(v.at)) {
+            Task { await runner.openBoard(id: v.boardId, title: v.title) }
+        }
+    }
+
+    private func todoRow(_ t: TodoItem) -> PanelRow {
+        let days = t.daysLeft()
+        return PanelRow(id: t.cardId, symbol: (days ?? 1) <= 0 ? "exclamationmark.circle" : "circle",
+                        title: t.label, hint: "白板：\(t.boardTitle)",
+                        trailing: t.dueLabel, trailingIsUrgent: (days ?? 1) <= 0) {
+            Task { await runner.openBoard(id: t.boardId, title: t.boardTitle) }
         }
     }
 
@@ -67,14 +129,16 @@ struct CommandPanelView: View {
         .onReceive(NotificationCenter.default.publisher(for: .panelReset)) { _ in
             if !query.isEmpty { query = "" }
             if selectedIndex != 0 { selectedIndex = 0 }
+            if state.panelMode != .commands { state.panelMode = .commands }
         }
         .onChange(of: query) { _, _ in selectedIndex = 0 }
+        .onChange(of: state.panelMode) { _, _ in query = ""; selectedIndex = 0; fieldFocused = true }
         .onAppear { postHeight() }
-        .onChange(of: matches.count) { _, _ in postHeight() }
+        .onChange(of: rows.count) { _, _ in postHeight() }
     }
 
     private func postHeight() {
-        NotificationCenter.default.post(name: .panelHeight, object: PanelMetrics.height(forRows: matches.count))
+        NotificationCenter.default.post(name: .panelHeight, object: PanelMetrics.height(forRows: rows.count))
     }
 
     /// Liquid Glass on macOS 26 (what Spotlight and Allume's own floating panels are made of);
@@ -92,7 +156,10 @@ struct CommandPanelView: View {
 
     private var searchRow: some View {
         HStack(spacing: 12) {
-            if !state.selectedCardIds.isEmpty {
+            if state.panelMode != .commands {
+                Image(systemName: state.panelMode == .allTodos ? "checklist" : "clock.arrow.circlepath")
+                    .font(.system(size: 18)).foregroundStyle(.secondary)
+            } else if !state.selectedCardIds.isEmpty {
                 CardStackView(cards: state.selectedCards, count: state.selectedCardIds.count)
             } else if state.selectionPending {
                 CardStackPlaceholder()
@@ -105,6 +172,11 @@ struct CommandPanelView: View {
                 .onKeyPress(.downArrow) { move(1); return .handled }
                 .onKeyPress(.upArrow) { move(-1); return .handled }
                 .onKeyPress(.tab) { move(1); return .handled }
+                .onKeyPress(.delete) {
+                    guard query.isEmpty, state.panelMode != .commands else { return .ignored }
+                    state.panelMode = .commands
+                    return .handled
+                }
             if state.isRunning { ProgressView().controlSize(.small) }
         }
         .padding(.horizontal, 14)
@@ -114,41 +186,56 @@ struct CommandPanelView: View {
     /// With nothing selected the field just invites a command; the reason nothing was read
     /// (timeout, no Allume…) goes to the log, not in the user's face.
     private var placeholder: String {
-        state.selectedCardIds.isEmpty ? "输入命令…" : "对 \(state.selectedCardIds.count) 张卡做什么？排列、大小、撤销…"
+        switch state.panelMode {
+        case .recentBoards: return "筛选最近去过的白板…"
+        case .allTodos: return "筛选待办…"
+        case .commands: return state.selectedCardIds.isEmpty ? "输入命令…" : "对 \(state.selectedCardIds.count) 张卡做什么？排列、大小、撤销…"
+        }
     }
 
     // MARK: - Results
+
+    private var emptyText: String {
+        switch state.panelMode {
+        case .commands: return "没有匹配的命令"
+        case .recentBoards: return state.recentBoards.isEmpty ? "还没有足迹：切换白板时会记下来" : "没有匹配的白板"
+        case .allTodos: return state.todos.isEmpty ? "没有待办：正文第一行写 @todo 的文字卡会出现在这里" : "没有匹配的待办"
+        }
+    }
 
     /// The only scrolling part: at most `maxRows` rows are visible, the selected row is kept in view.
     private var results: some View {
         ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if matches.isEmpty {
-                        Text("没有匹配的命令").foregroundStyle(.tertiary)
+                    if rows.isEmpty {
+                        Text(emptyText).foregroundStyle(.tertiary)
                             .padding(.horizontal, 10).frame(height: PanelMetrics.row)
                     }
-                    ForEach(Array(matches.enumerated()), id: \.element.id) { i, m in
-                        ResultRow(match: m, selected: i == selectedIndex)
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
+                        ResultRow(row: r, selected: i == selectedIndex)
                             .frame(height: PanelMetrics.row)
                             .contentShape(Rectangle())
                             .onTapGesture { selectedIndex = i; runSelected() }
-                            .id(m.id)
+                            .id(r.id)
                     }
                 }
                 .padding(8)
             }
-            .frame(height: CGFloat(max(1, min(matches.count, PanelMetrics.maxRows))) * PanelMetrics.row + PanelMetrics.listPadding)
-            .animation(.easeOut(duration: PanelMetrics.resizeDuration), value: matches.count)
+            .frame(height: CGFloat(max(1, min(rows.count, PanelMetrics.maxRows))) * PanelMetrics.row + PanelMetrics.listPadding)
+            .animation(.easeOut(duration: PanelMetrics.resizeDuration), value: rows.count)
             .onChange(of: selectedIndex) { _, i in
-                if matches.indices.contains(i) { proxy.scrollTo(matches[i].id, anchor: nil) }
+                if rows.indices.contains(i) { proxy.scrollTo(rows[i].id, anchor: nil) }
             }
         }
     }
 
     private var footer: some View {
         HStack(spacing: 5) {
-            if !state.status.isEmpty {
+            if state.panelMode != .commands {
+                Text(state.panelMode == .allTodos ? "全部待办 · \(rows.count) 条" : "最近去过 · \(rows.count) 块白板")
+                    .font(.caption).foregroundStyle(.tertiary)
+            } else if !state.status.isEmpty {
                 Image(systemName: state.statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(state.statusIsError ? Color.orange : Color.green)
@@ -157,7 +244,7 @@ struct CommandPanelView: View {
                 Text("白板：\(state.boardTitle)").font(.caption).foregroundStyle(.tertiary)
             }
             Spacer()
-            Text("↑↓ 选择 · ⏎ 执行 · Esc 关闭").font(.caption2).foregroundStyle(.tertiary)
+            Text(state.panelMode == .commands ? "↑↓ 选择 · ⏎ 执行 · Esc 关闭" : "↑↓ 选择 · ⏎ 跳转 · Esc 返回").font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 14)
         .frame(height: PanelMetrics.footer)
@@ -166,35 +253,39 @@ struct CommandPanelView: View {
     // MARK: - Actions
 
     private func move(_ delta: Int) {
-        let n = matches.count
+        let n = rows.count
         guard n > 0 else { return }
         selectedIndex = (selectedIndex + delta + n) % n
     }
 
     private func runSelected() {
-        let list = matches
+        let list = rows
         guard list.indices.contains(selectedIndex) else { return }
-        let kind = list[selectedIndex].kind
+        let row = list[selectedIndex]
         query = ""
-        Task { await runner.run(kind) }
+        row.run()
     }
 }
 
 private struct ResultRow: View {
-    let match: CommandMatch
+    let row: PanelRow
     let selected: Bool
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: match.spec.symbol)
+            Image(systemName: row.symbol)
                 .frame(width: 22)
                 .foregroundStyle(selected ? Color.white : Color.secondary)
             VStack(alignment: .leading, spacing: 1) {
-                Text(match.title).font(.system(size: 14, weight: .medium))
-                Text(match.spec.hint).font(.caption).lineLimit(1)
+                Text(row.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
+                Text(row.hint).font(.caption).lineLimit(1)
                     .foregroundStyle(selected ? Color.white.opacity(0.8) : Color.secondary)
             }
             Spacer()
+            if let t = row.trailing {
+                Text(t).font(.caption.weight(.medium))
+                    .foregroundStyle(selected ? Color.white : (row.trailingIsUrgent ? Color.orange : Color.secondary))
+            }
             if selected { Text("⏎").font(.caption).foregroundStyle(Color.white.opacity(0.8)) }
         }
         .padding(.horizontal, 10)

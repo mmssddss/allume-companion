@@ -68,6 +68,8 @@ final class BoardModel {
     var allumeActive = false
     /// Called on the main actor after every successful load (the panel re-reads titles from it).
     var onLoaded: (() -> Void)?
+    /// Called when the model moves to another board (title resolved): `(boardId, title)`.
+    var onSwitched: ((String, String) -> Void)?
 
     private var inFlight: Task<Void, Never>?
     private var prewarm: Task<Void, Never>?
@@ -213,6 +215,7 @@ final class BoardModel {
             cards = [:]; rows = []; loadedAt = nil
         }
         Log.info("board model: \"\(title)\" → \(id) (\(reason))")
+        onSwitched?(id, title)
         Task { await refresh(reason: reason) }
     }
 
