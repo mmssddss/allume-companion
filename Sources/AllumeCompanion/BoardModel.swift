@@ -8,6 +8,8 @@ struct BoardCard: Decodable {
     struct Document: Decodable {
         let id: String?
         let body: String?       // text / chain cards: the inline body
+        let fileName: String?   // image / pdf / video / file cards
+        let byteSize: Int?
     }
     let id: String
     let kind: String?
@@ -16,6 +18,8 @@ struct BoardCard: Decodable {
     let frame: Frame
     let parentDocumentId: String?
     let document: Document?
+    /// Stacking order on the board (higher is on top); BoardThumbnailRenderer draws low to high.
+    let zOrder: Int?
 
     static func decodeRows(_ json: String) -> [BoardCard] {
         (try? JSONDecoder().decode([BoardCard].self, from: Data(json.utf8))) ?? []

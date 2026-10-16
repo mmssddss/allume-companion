@@ -180,7 +180,7 @@ Allume 没有任何变更通知，容器也读不到，所以伴生 app 自己�
 |---|---|---|
 | image | `allume card-content <id> --contents raw --format json`：原图 JPEG/PNG 字节在 stdout，元数据 JSON 在 stderr。用 ImageIO 直接解码成最长边 120px 的缩略（不解码整张大图，按 EXIF 方向转正） | 整张卡铺满（aspect fill，圆角裁切），标题叠在底部半透明条上 |
 | pdf | `allume card-pdf-page <id> --page 1 --max-dimension 256 --format json`：第一页 PNG 在 stdout，同样缩到 120px | 同上 |
-| subBoard | 子白板没有图。`board-content <document.id> --format json`（`document.id` 在 ⌘K 后读的那行 `board-content` 里就有）给出里面每张卡的 `frame`，按所有卡的包围盒归一化到 120×84，每张卡画一个圆角小矩形，当线框缩略 | 同上，标题是白板名 |
+| subBoard | 子白板没有图。`board-content <document.id> --format json`（`document.id` 在 ⌘K 后读的那行 `board-content` 里就有）给出里面每张卡的行，`BoardThumbnailRenderer` 据此离屏画一张 240×180 的白板缩略（见下面"子白板缩略图怎么画"） | 同上，标题是白板名 |
 | text、chain | 不取图：`board-content` 行里 `document.body` 就是正文，取前 60 字（空白折叠） | 正文小字，最多 4 行 |
 | url、video | 不取图（url 只有链接和标题；video 只有整段 mp4） | 类型图标 + 标题 |
 
@@ -188,11 +188,47 @@ Allume 没有任何变更通知，容器也读不到，所以伴生 app 自己�
 前 3 张（`CardStackView.visible`）并发取图，每张取到就单独写回 `state.selectedCards`，面板随之刷新。
 `ThumbnailLoader` 按卡片 id 用 `NSCache` 缓存（最多 48 张），同一张卡在 app 运行期间只取一次；正在取的卡片再被请求时
 共用同一次调用。实测（三张分别在不同白板上）：image 原图 990KB → 55×120，约 300–450ms；pdf 9.7KB → 104×120，
-约 230–450ms；subBoard 12 张卡 → 120×84，约 230–470ms；三张并发，都在面板打开后约半秒内到齐。
+约 230–450ms；subBoard 见下面；三张并发，都在面板打开后约半秒到一秒半内到齐。
 每张的尺寸和耗时写进 `~/Library/Logs/AllumeCompanion.log`（`thumbnail <kind> <id>: WxH px, …, N ms`）。
 
-局限：只取前 3 张；缩略图不跟卡片内容变化（改了图片要重启 app 才刷新）；pdf 只渲染第一页；
-`card-pdf-page` 的 `--max-dimension` 最小 256，所以 PDF 总是先渲染 256 再缩到 120。
+局限：只取前 3 张；缩略图不跟卡片内容变化（改了图片要重启 app 才刷新；子白板的缩略图重启后会按内容哈希重新校验）；
+pdf 只渲染第一页；`card-pdf-page` 的 `--max-dimension` 最小 256，所以 PDF 总是先渲染 256 再缩到 120。
+
+#### 子白板缩略图怎么画
+
+目标是 Allume 自己的子白板卡片那种效果：白底，里面每张卡缩小后画在原位。`BoardThumbnailRenderer.swift` 的输入是那块白板的
+`board-content` 行，输出 240×180 的位图（`NSBitmapImageRep` + 翻转的 `NSGraphicsContext`，在后台任务里画，不碰主线程）：
+
+1. 算所有卡 `frame` 的包围盒，等比缩放到画布（留 6px 边，不放大超过 1:1），居中。
+2. 按 `zOrder` 从低到高逐张画：
+
+   | 卡片 | 画法 |
+   |---|---|
+   | text、chain | 白色圆角矩形 + 细灰边，`document.body`（取前 400 字）用 2–3pt 系统字体按行填进去，超出裁掉——远看是一团文字 |
+   | url | 浅蓝灰矩形，标题一行（截尾） |
+   | image | `card-content <id> --contents raw`，ImageIO 直接解码成最长边 160px，aspect-fill 填进圆角矩形 |
+   | pdf | `card-pdf-page <id> --page 1 --max-dimension 256` 的首页，白底 aspect-fit |
+   | subBoard | 灰色圆角块 + 标题一行 |
+   | video、file、其他 | 灰块 + SF Symbol 图标（play.fill / doc.fill） |
+
+3. 图片预算：一块白板最多取 **6 张**图（image 和 pdf 合计，按卡在画布上的面积从大到小挑），其余画灰块；两张并发取，
+   每张一次 CLI 调用（150–450ms）。所以一张含图的子白板缩略约 0.5–1.2 秒，不含图的几 ms。
+
+缓存按白板文档 id 两层：内存里一份，磁盘上 `~/Library/Application Support/AllumeCompanion/thumbs/<id>.png`
+（id 里的 `:` 写成 `_`）旁边放 `<id>.hash`——每行里影响画面的字段（id、kind、title、frame、zOrder、正文、文件名/大小）的 SHA-256。
+不能直接哈希整段 JSON：`board-content` 的 `createdAt` 每次调用都是调用当时的时间，原文每次都不同（见下面的局限）。再次请求时先算哈希，
+相同就直接用现成的 PNG，不取图不重画（日志 `cache hit (disk), N cards, 0 ms`）；行变了（卡移动、增删、改正文）才重画。
+取图失败的那次只留在内存里、不写盘，下次启动会重试。层叠外层 `ThumbnailLoader` 仍按卡片 id 缓存，所以同一次运行里
+同一张子白板卡只走一次这条路径。
+
+日志每张一行：`board thumbnail "<白板名>" <文档id>: N cards, M images, k/n pictures fetched, scale s, 240×180 px, T ms (fetch a, draw b)`。
+实测（Project 板上的子白板）：3 张嵌套子白板、无图 → 4 ms；12 张卡、4 张图 → 747 ms；29 张卡、16 张图（取 6）→ 1151 ms；
+第二次启动全部 `cache hit (disk)`，0–1 ms。`BoardModel` 的预热也走这条路径（`board thumbnail[bg]`），所以当前白板上的
+前 12 张子白板在装入后约 4 秒内就有带内容的缩略，之后的启动只剩每张一次 `board-content` 校验哈希。
+
+局限：板上没有墨迹数据（`board-content` 只给 `inkStrokeCount`），手写内容画不出来；一块白板最多 6 张真图；
+嵌套子白板只画灰块（不递归）；颜色固定为白底灰块，不跟深色模式。`createdAt` 实测每次调用都变（等于调用时间），
+所以它不进哈希——这也意味着"按时间"排序拿到的创建时间并不可靠，待查。
 
 ### 撤销上一步
 
@@ -254,7 +290,8 @@ Sources/AllumeCompanion/
   BoardIndex.swift                 标题 → 白板文档 id 表：BFS 爬取、boards.json 缓存、限频重爬
   BoardModel.swift                 当前白板的卡片副本（BoardCard 行）：解析标题、四种刷新时机、缩略图预热
   CommandRunner.swift              三条命令 + 一层撤销（执行前记 frame，优先用新鲜的模型）；describeSelection 先查模型再回退 CLI
-  ThumbnailLoader.swift            按类型取缩略图（image/pdf 字节、subBoard 线框），NSCache 按卡片 id 缓存
+  ThumbnailLoader.swift            按类型取缩略图（image/pdf 字节、subBoard 交给 BoardThumbnailRenderer），NSCache 按卡片 id 缓存
+  BoardThumbnailRenderer.swift     用 board-content 行离屏画 240×180 的白板缩略（文字、图片、PDF、嵌套白板），按白板 id 缓存到内存 + thumbs/ 目录
   OverlayController.swift          命令面板 NSPanel 及定位
   CommandCatalog.swift             命令表、多语言别名、参数解析（纯 Swift，可单独 swiftc 测）
   Views.swift                      SwiftUI：CommandPanelView（输入框 + 结果列表）、CardStackView / CardFace（缩略图、正文、图标三种面）

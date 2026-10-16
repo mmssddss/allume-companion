@@ -30,6 +30,9 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   （字节在 stdout、元数据在 stderr），pdf 用 `card-pdf-page <id> --page 1 --max-dimension 256 -f json`（最小 256）；
   `AllumeCLI.run(…, raw: true)` 返回 `stdoutData`。`board-content -f json` 的行里已带 text/chain 的 `document.body`
   和 subBoard 的 `document.id`，不必再逐张 `card-content`。
+- 子白板缩略图由 `BoardThumbnailRenderer` 用 `board-content` 行离屏画出（240×180，文字卡 2–3pt 小字、image/pdf 真图最多 6 张、
+  嵌套白板灰块），按白板文档 id 缓存在 `~/Library/Application Support/AllumeCompanion/thumbs/<id>.png` + `<id>.hash`
+  （行里影响画面的字段的 SHA-256；相同就不重画。不能哈希整段 JSON：`createdAt` 每次调用都等于调用时间）。`rm -rf` 那个目录即可强制重画。板上没有墨迹数据（只有 `inkStrokeCount`），画不了笔画。
 - 当前白板模型（README "当前白板模型"）：`BoardIndex` 用 `list-workspaces` → `board-content --kinds subBoard` BFS 建
   标题→文档 id 表（缓存在 `~/Library/Application Support/AllumeCompanion/boards.json`），`BoardModel` 用一次 `board-content`
   装入当前白板的卡片。⌘K 的 describeSelection 先查模型；撤销快照只在模型 2 秒内刷新过时用它，否则必须现查。
