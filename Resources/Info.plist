@@ -8,6 +8,10 @@
 	<string>Allume Companion</string>
 	<key>CFBundleExecutable</key>
 	<string>AllumeCompanion</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleIconName</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.maverickli.allume-companion</string>
 	<key>CFBundleInfoDictionaryVersion</key>
