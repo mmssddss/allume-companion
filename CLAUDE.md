@@ -22,7 +22,17 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
 - CLI 自己是沙盒 app，直接 `Process` 启动时读不到 `isCLIReadOnly` → 一律只读（exit 7）；必须经 `open -W` 启动。
 - `allume search` 不接受空 query；`allume card-content <白板id>` 报 "No card"。
 - `board-content` / `card-content` 的 `createdAt` 是调用时间，不是创建时间；创建先后用卡片 id 后半段的字典序（单调递增）。
-- Allume 的 AX 树里卡片标题是 AXTextField 的 value（subBoard 也有），但没有选中状态，选中仍靠 ⌘C + 剪贴板。
+- Allume 的 AX 树（`ALLUME_AXDUMP=1` + `kill -USR2` 导出，Allume 是 Catalyst app，根是 `AXGroup/iOSContentGroup`）实测：
+  - 每张卡是一个 `AXGroup`，标题是里面 `AXTextField` 的 value（subBoard 也有；没标题的图片卡是 12×21 的空字段），
+    image/pdf 的内容区是空值的 `AXStaticText`，文字卡/文字链是带完整正文的 `AXTextArea`。子白板缩略图里每张小卡一个空 `AXStaticText`。
+  - 节点坐标是屏幕坐标，和 CLI `frame` 线性对应（屏幕 = 白板 × 缩放 + 偏移；缩放 1 时偏移只在 y 上，约 73–78pt）。
+    拿任一张卡的两套坐标就能解出缩放和偏移，于是可以算出视口在白板上的范围和哪些卡可见。
+  - 屏幕外的卡仍在树里（拖出窗口后 x=2032 的卡照样有节点），树是整块白板不是视口，解偏移不需要先找屏幕上的卡。
+  - **没有选中状态**：真选中一张卡后所有节点 `AXSelected` 仍是 false，卡片组的 `AXSelectedChildren` 读出 kAXErrorNoValue（-25212），
+    `AXFocusedUIElement` 仍是整个内容组。选中仍靠 ⌘C + 剪贴板。
+  - 编辑文字卡时 `AXFocusedUIElement` 就是那张卡的 `AXTextArea`：正文、屏幕坐标、`AXSelectedTextRange`（光标/选中区间）都有，
+    所以"正在改哪张卡"和"笔记里选中的那段字"拿得到；卡片 id 树里没有，要用正文比对 `BoardModel` 或坐标换算回 `frame` 反查。
+  - 窗口的 `AXDocument` 读出来是空的，白板文档 id 拿不到；手写笔迹没有。
 - CLI 做的移动在 Allume 里 ⌘Z 撤不掉（不经过它的 undo manager），只能 `card-move` 恢复；面板的"撤销"就是这么做的。
   面板不提供删除：Allume 自己的 Delete 键带原生 ⌘Z。
 - `board-content` 只接受完整白板文档 id `<前缀>:<后缀>`，卡片 id 的 scope 前缀不够；`card-content <卡片id> -f json` 的

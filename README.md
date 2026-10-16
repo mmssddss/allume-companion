@@ -29,7 +29,8 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
   `ALLUME_SELECT_IDS=a,b,c open build/AllumeCompanion.app` 启动时直接预设选中的卡片 id，不经过 ⌘C
   （这时 `kill -USR1` 只开关面板、不重读选中；再加 `ALLUME_SNAPSHOT=/path.png` 会在面板打开时把它渲染成 PNG，
   不需要屏幕录制权限）；
-  用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志。
+  用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志
+  （每个节点的角色、标题/正文、屏幕坐标、焦点/选中态、非标准属性名，以及当前的 `AXFocusedUIElement`）。
 - 它是菜单栏常驻 app（无 Dock 图标），从菜单栏图标里退出。
 
 ## 发布（Release）
