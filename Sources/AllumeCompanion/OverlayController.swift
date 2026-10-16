@@ -73,8 +73,11 @@ final class OverlayController {
         if panel.isVisible { panel.setFrame(panelFrame(for: window.frame), display: true) }
     }
 
-    func showPanel() {
+    /// `expectedRows` sizes the first frame right away, so the panel does not pop up at the
+    /// previous height and then jump once SwiftUI reports the real one.
+    func showPanel(expectedRows: Int? = nil) {
         guard let window else { return }
+        if let n = expectedRows { contentHeight = PanelMetrics.height(forRows: n) }
         panel.setFrame(panelFrame(for: window.frame), display: true)
         panel.makeKeyAndOrderFront(nil)
         NotificationCenter.default.post(name: .panelShown, object: nil)

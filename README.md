@@ -82,11 +82,12 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 同一次 ⌘C 还会放一个 `com.allume.copyable.selection` item（selectionId、cardInfos、chainInfos、selectionPath）
 和每张卡的 `public.url` 分享链接，这些目前没用到。参考脚本：`~/.claude/skills/allume/scripts/selection.py`。
 
-⌘K 的流程（`SelectionReader.swift`）：
+⌘K 的流程（`AppDelegate.readSelectionAndShow` + `SelectionReader.swift`）。面板先弹出（实测 13–47ms，第一次略慢是 SwiftUI 首次布局），
+高度按"全部命令"预先算好，不等剪贴板；剪贴板这一轮在后面跑完再填进卡片层叠，没选中时 300ms 超时也只是层叠不出现：
 
 1. 把当前剪贴板的所有 item/类型/数据快照下来；
 2. 用 `CGEvent.postToPid` 给 Allume 进程发 ⌘C（键码 8 + ⌘，一个按下一个抬起）；
-3. 每 10ms 查 `NSPasteboard.general.changeCount`，最多等 300ms；没变就报"没有选中卡片 / 焦点不在画布"；
+3. 每 2ms 查 `NSPasteboard.general.changeCount`，最多等 300ms（有选中时实测 40–70ms 就变）；没变就只写日志；
 4. 解析所有 `com.allume.copyable.card` item（也接受 payload 形状相同的 `dyn.*` 类型，排除含 `cardInfos` 的 selection item）；
 5. 把快照写回剪贴板，恢复用户原来复制的东西；
 6. 打开命令面板，显示"选中 N 张卡"。

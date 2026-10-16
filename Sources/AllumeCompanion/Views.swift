@@ -30,7 +30,7 @@ struct CommandPanelView: View {
 
     private var matches: [CommandMatch] {
         CommandCatalog.matches(for: query).filter { m in
-            !m.spec.needsSelection || !state.selectedCardIds.isEmpty
+            !m.spec.needsSelection || !state.selectedCardIds.isEmpty || state.selectionPending
         }
     }
 

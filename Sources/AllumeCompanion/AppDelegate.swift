@@ -161,26 +161,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Selection
 
+    /// ⌘K: the panel goes up first (a few ms), then the clipboard round trip fills in the
+    /// selection; a timeout (nothing selected) therefore no longer delays the panel by 300 ms.
     func readSelectionAndShow() {
         Task { @MainActor in
             var stats = HotKeyStats()
+            state.selectionPending = true
+            state.selectedCardIds = []
+            state.selectedCards = []
+            tracker.refresh()
+            overlay.update(window: tracker.currentWindow())
+            overlay.showPanel(expectedRows: CommandCatalog.specs.count)
+            stats.panelShown()
             do {
                 let cards = try await SelectionReader.capture(pid: tracker.pid)
                 state.selectedCardIds = cards.map(\.id)
                 state.selectionFromAllume = true
                 state.selectionMessage = cards.isEmpty ? "⌘C 后剪贴板里没有 Allume 卡片" : ""
-                Log.info("selection: \(cards.count) cards: \(cards.map(\.id))")
+                Log.info("selection: \(cards.count) cards after \(Int(Date().timeIntervalSince(stats.t0) * 1000)) ms: \(cards.map(\.id))")
                 state.appendLog("读取选中：\(cards.count) 张 " + cards.map(\.id).joined(separator: ", "))
             } catch {
                 state.selectedCardIds = []
                 state.selectionMessage = error.localizedDescription
                 state.appendLog("读取选中失败：\(error.localizedDescription)")
-                Log.info("selection failed: \(error.localizedDescription)")
+                Log.info("selection failed after \(Int(Date().timeIntervalSince(stats.t0) * 1000)) ms: \(error.localizedDescription)")
             }
-            tracker.refresh()
-            overlay.update(window: tracker.currentWindow())
-            overlay.showPanel()
-            stats.panelShown()
+            state.selectionPending = false
             // The panel is one of the model's refresh points; it runs alongside describing
             // the selection (which uses the model as it is now) and re-describes once done.
             Task { await boardModel.refresh(reason: "panel opened") }

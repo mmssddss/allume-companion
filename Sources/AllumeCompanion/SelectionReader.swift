@@ -48,10 +48,10 @@ enum SelectionReader {
             if Date() > deadline {
                 throw Failure.timeout
             }
-            try? await Task.sleep(nanoseconds: 10_000_000)
+            try? await Task.sleep(nanoseconds: 2_000_000)
         }
-        // Give Allume a moment to finish writing every item of a multi-card selection.
-        try? await Task.sleep(nanoseconds: 20_000_000)
+        // Allume writes all items in one pasteboard transaction (one changeCount step), so no
+        // settle delay is needed; measured: changeCount moves ~40–70 ms after the ⌘C is posted.
 
         let cards = parse(pb)
         Log.info("pasteboard after ⌘C: changeCount \(before)→\(pb.changeCount), items=\((pb.pasteboardItems ?? []).map { $0.types.map(\.rawValue) })")
