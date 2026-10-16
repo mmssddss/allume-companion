@@ -54,6 +54,7 @@ enum SelectionReader {
         try? await Task.sleep(nanoseconds: 20_000_000)
 
         let cards = parse(pb)
+        Log.info("pasteboard after ⌘C: changeCount \(before)→\(pb.changeCount), items=\((pb.pasteboardItems ?? []).map { $0.types.map(\.rawValue) })")
         restore(pb, saved)
         return cards
     }

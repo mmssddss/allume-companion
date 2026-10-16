@@ -17,6 +17,7 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 - 签名：优先用钥匙串里的 Apple Development / Developer ID 证书（可用 `CODESIGN_IDENTITY` 指定），
   找不到就 ad-hoc。**ad-hoc 签名每次重新构建都会让 macOS 丢掉辅助功能授权**，要重新勾选。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
+- 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘⇧P；`kill -USR2 ...` 等于点"排成 N 列"。
 - 它是菜单栏常驻 app（无 Dock 图标），从菜单栏图标里退出。
 
 ## 需要的权限
@@ -24,6 +25,7 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 | 权限 | 用途 | 没有会怎样 |
 |---|---|---|
 | 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，浮层才能贴上去；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C | 浮层不显示，⌘⇧P 读不到选中 |
+| Allume 的 CLI 读写模式 | `card-gather` / `card-move` / `delete` 都是写操作，CLI 默认只读 | 面板里显示 `exit 7`：`allume card-gather is unavailable: the CLI is in read-only mode`。在 Allume → Preferences → Command Line 里切到 read-write |
 
 首次启动会弹系统提示；也可以从菜单栏图标 → "打开辅助功能设置…"。不需要"输入监控"：全局快捷键用的是
 Carbon `RegisterEventHotKey`，不需要额外权限。

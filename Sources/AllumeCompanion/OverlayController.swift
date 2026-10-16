@@ -59,12 +59,13 @@ final class OverlayController {
     func update(window: AllumeTracker.WindowInfo?) {
         self.window = window
         guard let window, window.isActive || panel.isKeyWindow else {
+            if pill.isVisible { Log.info("pill hidden") }
             pill.orderOut(nil)
             panel.orderOut(nil)
             return
         }
         pill.setFrame(pillFrame(for: window.frame), display: true)
-        if !pill.isVisible { pill.orderFront(nil) }
+        if !pill.isVisible { pill.orderFront(nil); Log.info("pill shown at \(pill.frame)") }
         if panel.isVisible { panel.setFrame(panelFrame(for: window.frame), display: true) }
     }
 

@@ -12,6 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var runner: CommandRunner!
     private var overlay: OverlayController!
     private var trustTimer: Timer?
+    private var usr1Source: DispatchSourceSignal?
+    private var usr2Source: DispatchSourceSignal?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         runner = CommandRunner(state: state)
@@ -37,6 +39,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // ⌘⇧P: kVK_ANSI_P = 0x23
         hotKey = HotKey(keyCode: 0x23, modifiers: UInt32(cmdKey | shiftKey))
         hotKey?.action = { [weak self] in self?.readSelectionAndShow() }
+
+        // Test hook: `kill -USR1 $(pgrep -x AllumeCompanion)` behaves like pressing ⌘⇧P.
+        signal(SIGUSR1, SIG_IGN)
+        usr1Source = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
+        usr1Source?.setEventHandler { [weak self] in self?.readSelectionAndShow() }
+        usr1Source?.resume()
+        // Test hook: SIGUSR2 runs "排成 N 列" on the current selection, like clicking the button.
+        signal(SIGUSR2, SIG_IGN)
+        usr2Source = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
+        usr2Source?.setEventHandler { [weak self] in
+            guard let self else { return }
+            Task { @MainActor in await self.runner.gatherGrid(columns: self.state.columns); Log.info("log:\n" + self.state.log) }
+        }
+        usr2Source?.resume()
 
         NotificationCenter.default.addObserver(forName: .togglePanel, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.overlay.togglePanel() }
@@ -71,8 +87,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let cards = try await SelectionReader.capture(pid: tracker.pid)
                 state.selectedCardIds = cards.map(\.id)
                 state.selectionMessage = cards.isEmpty ? "⌘C 后剪贴板里没有 Allume 卡片" : ""
-                Log.info("selection: \(cards.count) cards")
-                state.appendLog("读取选中：\(cards.count) 张 " + cards.map { String($0.id.suffix(8)) }.joined(separator: ", "))
+                Log.info("selection: \(cards.count) cards: \(cards.map(\.id))")
+                state.appendLog("读取选中：\(cards.count) 张 " + cards.map(\.id).joined(separator: ", "))
             } catch {
                 state.selectedCardIds = []
                 state.selectionMessage = error.localizedDescription
