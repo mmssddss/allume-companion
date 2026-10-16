@@ -127,6 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 state.selectedCardIds = []
                 state.selectionMessage = error.localizedDescription
                 state.appendLog("读取选中失败：\(error.localizedDescription)")
+                Log.info("selection failed: \(error.localizedDescription)")
             }
             tracker.refresh()
             overlay.update(window: tracker.currentWindow())
