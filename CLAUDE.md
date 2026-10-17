@@ -87,7 +87,8 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   版式（仿 Raycast）的尺寸都在 `PanelMetrics`（`inset` 左边线、`icon` + `iconGap` 让输入框的字和行标题对齐）。
   文字用 `Theme.text1/2/3`（label 色的固定不透明度），不用 `.secondary`/`.tertiary`：玻璃里的离屏快照中它们画得和
   标题几乎一样黑，带颜色的字也丢色（屏幕上未逐一核对）；固定不透明度在快照和屏幕上一致。要强调就用填色小标签或彩色图标。
-  各模式的行 id 不要重名（例如添加待办的草稿行是 `add-todo-draft`，不是命令的 `add-todo`）：LazyVStack 会按 id 复用旧行，画出过期内容。
+  列表是一个普通 VStack 里的一个 ForEach（`listItems` 把组标题和行摊平），行的 id 带上所在组的 id：以前用 LazyVStack +
+  组内 ForEach 只按行 id 区分，行从一组挪到另一组（空输入 → 打字）时会留着旧视图，高亮不更新，但 ⏎ 照常执行。
   空输入按 `CommandGroup` 分组、按 `CommandSpec.needs` 过滤（没选中 / 一张 / 多张 / 一张子白板）；打字时是命令、
   白板（`AppState.boards` ← `BoardIndex.refs`）、待办三组按最好匹配排序。
   测各场景：`ALLUME_SELECT_IDS=","`（空选中）/ 一张子白板 id / 多张 id，配 `ALLUME_SNAPSHOT`；打字用 `ALLUME_USR2="type:…"`。

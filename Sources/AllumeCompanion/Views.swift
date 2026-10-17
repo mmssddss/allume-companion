@@ -445,32 +445,53 @@ struct CommandPanelView: View {
 
     /// The only scrolling part: at most `maxList` tall, the selected row (or, for the first row
     /// of a section, its title) is kept in view.
+    /// One entry of the list: a section title or a row, with an id unique across sections.
+    private struct ListItem: Identifiable {
+        let id: String
+        let title: String?
+        let row: PanelRow?
+        let index: Int
+    }
+
+    /// Titles and rows flattened into one list. A row's id is prefixed with its section's, so a
+    /// row that moves to another section (empty field → typing) is a new view. Keyed by its own
+    /// id alone, SwiftUI kept the old view and stopped updating its highlight.
+    private func listItems(_ sections: [PanelSection]) -> [ListItem] {
+        var items: [ListItem] = []
+        var i = 0
+        for s in sections {
+            if let t = s.title { items.append(ListItem(id: "h:" + s.id, title: t, row: nil, index: i)) }
+            for r in s.rows {
+                items.append(ListItem(id: s.id + "/" + r.id, title: nil, row: r, index: i))
+                i += 1
+            }
+        }
+        return items
+    }
+
+    /// The only scrolling part, always `PanelMetrics.list` tall; the selected row (or, for the
+    /// first row of a section, its title) is kept in view. A plain VStack: the lists are short,
+    /// and a lazy stack reused stale rows.
     private var results: some View {
         let sections = self.sections
-        // Index (in `rows`) of each section's first row.
-        let firstIndex = sections.reduce(into: [Int]()) { acc, sec in
-            acc.append(acc.isEmpty ? 0 : acc.last! + sections[acc.count - 1].rows.count)
-        }
+        let items = listItems(sections)
         return ScrollViewReader { proxy in
             ScrollView(.vertical) {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(sections.enumerated()), id: \.element.id) { si, section in
-                        if let title = section.title {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(items) { item in
+                        if let r = item.row {
+                            ResultRow(row: r, selected: item.index == selectedIndex)
+                                .contentShape(Rectangle())
+                                .onTapGesture { selectedIndex = item.index; runSelected() }
+                        } else if let title = item.title {
                             Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.text2)
                                 .padding(.horizontal, PanelMetrics.inset - 8)
                                 .padding(.bottom, 6)
                                 .frame(height: PanelMetrics.header, alignment: .bottomLeading)
-                                .id("h:" + section.id)
-                        }
-                        ForEach(Array(section.rows.enumerated()), id: \.element.id) { ri, r in
-                            let i = firstIndex[si] + ri
-                            ResultRow(row: r, selected: i == selectedIndex)
-                                .contentShape(Rectangle())
-                                .onTapGesture { selectedIndex = i; runSelected() }
-                                .id(r.id)
                         }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 8)
                 .padding(.vertical, PanelMetrics.listPadding)
             }
@@ -482,13 +503,10 @@ struct CommandPanelView: View {
             .frame(height: PanelMetrics.list)
             .opacity(listHidden ? 0 : 1)
             .onChange(of: selectedIndex) { _, i in
-                guard let si = firstIndex.lastIndex(where: { $0 <= i }), sections.indices.contains(si) else { return }
-                let section = sections[si]
-                if i == firstIndex[si], section.title != nil {
-                    proxy.scrollTo("h:" + section.id, anchor: nil)
-                } else if section.rows.indices.contains(i - firstIndex[si]) {
-                    proxy.scrollTo(section.rows[i - firstIndex[si]].id, anchor: nil)
-                }
+                // The section title when this is a section's first row, else the row itself.
+                guard let k = items.firstIndex(where: { $0.row != nil && $0.index == i }) else { return }
+                let target = k > 0 && items[k - 1].row == nil ? items[k - 1].id : items[k].id
+                proxy.scrollTo(target, anchor: nil)
             }
         }
     }
@@ -562,7 +580,10 @@ private struct ResultRow: View {
     var body: some View {
         HStack(spacing: PanelMetrics.iconGap) {
             RowIcon(symbol: row.symbol, tint: row.tint)
-            Text(row.title).font(.system(size: 14)).foregroundStyle(Theme.text1)
+            // Capped so a very long title (a board named after a whole sentence) leaves the
+            // subtitle room for its own ellipsis instead of one clipped glyph.
+            Text(row.title.count > 32 ? row.title.prefix(31) + "…" : row.title)
+                .font(.system(size: 14)).foregroundStyle(Theme.text1)
                 .lineLimit(1).layoutPriority(1)
             Text(row.hint).font(.system(size: 14)).foregroundStyle(Theme.text2)
                 .lineLimit(1)
