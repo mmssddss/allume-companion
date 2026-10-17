@@ -9,7 +9,7 @@ import Foundation
 /// prefix) and `cardId` (suffix). `hex(scopeId):hex(cardId)` is exactly the qualified id the CLI uses.
 ///
 /// Flow: snapshot the pasteboard → post ⌘C to Allume's pid → wait for changeCount to move
-/// (≤ `timeout`) → parse → restore the snapshot. Measured: Allume writes 30–110 ms after the
+/// (≤ `timeout`) → parse → restore the snapshot (marked transient, see `restoreMarkers`). Measured: Allume writes 30–110 ms after the
 /// ⌘C, so `timeout` is about twice that; with nothing selected it is how long the panel's list
 /// waits to unfold. If Allume is slower (a huge board, a busy machine), the wait gives up but
 /// keeps watching for `lateWatch` more: a late write is then still parsed, the user's clipboard
@@ -30,13 +30,19 @@ enum SelectionReader {
     enum Failure: Error, LocalizedError {
         case notTrusted
         case noAllume
+        case notFrontmost
         case timeout
+        /// Allume wrote its own types but none parsed as a card: most likely Allume changed the
+        /// private format (an update), not something the user did.
+        case unrecognized
 
         var errorDescription: String? {
             switch self {
             case .notTrusted: return String(localized: "没有辅助功能权限，无法向 Allume 发送 ⌘C")
             case .noAllume: return String(localized: "Allume 没在运行")
+            case .notFrontmost: return String(localized: "Allume 不在前台，没有读选中")
             case .timeout: return String(localized: "Allume 在 \(Int(SelectionReader.timeout * 1000))ms 内没有写剪贴板：可能没有选中卡片，或焦点不在画布上")
+            case .unrecognized: return String(localized: "认不出 Allume 复制的卡片，可能是 Allume 更新了。菜单栏 → 复制诊断信息，发到 GitHub issue")
             }
         }
     }
@@ -45,6 +51,7 @@ enum SelectionReader {
     static func capture(pid: pid_t?) async throws -> [Card] {
         guard AXIsProcessTrusted() else { throw Failure.notTrusted }
         guard let pid else { throw Failure.noAllume }
+        guard await waitUntilFrontmost(pid) else { throw Failure.notFrontmost }
         let pb = NSPasteboard.general
         let t0 = Date()
         let saved = snapshot(pb)
@@ -53,7 +60,7 @@ enum SelectionReader {
         if snapMs > 20 || bytes > 1_000_000 { Log.info("pasteboard snapshot: \(saved.count) items, \(bytes) bytes, \(snapMs) ms") }
         let before = pb.changeCount
 
-        postCommand(key: 8, to: pid) // kVK_ANSI_C
+        guard postCommand(key: 8, to: pid) else { throw Failure.notFrontmost } // kVK_ANSI_C
 
         let deadline = Date().addingTimeInterval(timeout)
         while pb.changeCount == before {
@@ -66,9 +73,16 @@ enum SelectionReader {
         // Allume writes all items in one pasteboard transaction (one changeCount step), so no
         // settle delay is needed; measured: changeCount moves ~40–70 ms after the ⌘C is posted.
 
+        let written = Date()
         let cards = parse(pb)
-        Log.info("pasteboard after ⌘C: changeCount \(before)→\(pb.changeCount), items=\((pb.pasteboardItems ?? []).map { $0.types.map(\.rawValue) })")
+        let types = (pb.pasteboardItems ?? []).map { $0.types.map(\.rawValue) }
+        let after = pb.changeCount
         restore(pb, saved)
+        // How long Allume's card data sat in the clipboard (as far as we can see it): the window in
+        // which a clipboard manager could record it. Logged after the restore, not before.
+        let heldMs = Int(Date().timeIntervalSince(written) * 1000)
+        Log.info("pasteboard after ⌘C: changeCount \(before)→\(after), items=\(types); restored \(heldMs) ms after Allume wrote")
+        if cards.isEmpty, types.joined().contains(where: { $0.hasPrefix("com.allume.copyable") }) { throw Failure.unrecognized }
         return cards
     }
 
@@ -98,14 +112,36 @@ enum SelectionReader {
 
     /// Posts ⌘<key> (a down and an up) straight to `pid`. Used for ⌘C here and, after a jump,
     /// for ⌘[ (see `CommandRunner.openBoard`); those are the only keys sent to Allume.
-    static func postCommand(key: CGKeyCode, to pid: pid_t) {
+    ///
+    /// Only while Allume is the active app. Measured: posted to Allume in the background, the down
+    /// registers but the up does not, and Allume (Catalyst) key-repeats the command — ⌘C rewrote
+    /// the clipboard ~29 times a second, so whatever the user copied was gone within 35 ms, until
+    /// Allume was activated and left again. A second key-up posted to it did not stop it.
+    @discardableResult
+    static func postCommand(key: CGKeyCode, to pid: pid_t) -> Bool {
+        guard NSRunningApplication(processIdentifier: pid)?.isActive == true else {
+            Log.info("not posting ⌘ key \(key): Allume is not the active app")
+            return false
+        }
         let src = CGEventSource(stateID: .combinedSessionState)
         guard let down = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: true),
-              let up = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: false) else { return }
+              let up = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: false) else { return false }
         down.flags = .maskCommand
         up.flags = .maskCommand
         down.postToPid(pid)
         up.postToPid(pid)
+        return true
+    }
+
+    /// Waits (up to `timeout`) for `pid` to become the active app, e.g. right after `activate()`.
+    @MainActor
+    static func waitUntilFrontmost(_ pid: pid_t, timeout: TimeInterval = 1) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while NSRunningApplication(processIdentifier: pid)?.isActive != true {
+            if Date() > deadline { return false }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        return true
     }
 
     // MARK: - Parse
@@ -155,12 +191,21 @@ enum SelectionReader {
         }
     }
 
+    /// nspasteboard.org markers on the restored items: "on the pasteboard only briefly / not copied
+    /// by the user", so clipboard managers don't record the restore as a fresh copy. Measured with
+    /// Paste: without them every ⌘K bumped the user's last clip to "just now"; with them it is
+    /// left alone. Allume's own write lasts a few ms and Paste never recorded it (it waits for the
+    /// pasteboard to settle; even 300 ms flickers were skipped).
+    static let restoreMarkers = ["org.nspasteboard.TransientType", "org.nspasteboard.AutoGeneratedType"]
+        .map { NSPasteboard.PasteboardType($0) }
+
     static func restore(_ pb: NSPasteboard, _ snapshot: Snapshot) {
         pb.clearContents()
         let items: [NSPasteboardItem] = snapshot.compactMap { dict in
             guard !dict.isEmpty else { return nil }
             let item = NSPasteboardItem()
             for (t, d) in dict { item.setData(d, forType: t) }
+            for m in restoreMarkers where dict[m] == nil { item.setData(Data(), forType: m) }
             return item
         }
         if !items.isEmpty { pb.writeObjects(items) }

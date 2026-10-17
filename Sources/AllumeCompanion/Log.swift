@@ -9,6 +9,15 @@ enum Log {
         let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f
     }()
 
+    /// At launch: past `maxBytes`, keep only the last `keepBytes` (from a line start), so the file
+    /// a user attaches to an issue stays small.
+    static func trim(maxBytes: Int = 4_000_000, keepBytes: Int = 1_000_000) {
+        guard let data = FileManager.default.contents(atPath: path), data.count > maxBytes else { return }
+        var tail = data.suffix(keepBytes)
+        if let nl = tail.firstIndex(of: UInt8(ascii: "\n")) { tail = tail[(nl + 1)...] }
+        try? Data(tail).write(to: URL(fileURLWithPath: path), options: .atomic)
+    }
+
     static func info(_ message: String) {
         let line = "\(stamp.string(from: Date())) \(message)\n"
         FileHandle.standardError.write(Data(line.utf8))

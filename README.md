@@ -32,6 +32,10 @@ The app is in English or Chinese, following your Mac's language.
 - macOS 14 or later
 - Allume (from [allume.com](https://allume.com) or Setapp), with its command-line tool turned on (see below)
 
+Tested with **Allume 4.0.2 (build 10836)**. The companion relies on a few things Allume doesn't document
+(what it puts on the clipboard, its window title), so a later Allume update can break parts of it.
+Settings → Allume shows the version it was tested with next to yours.
+
 ## Install
 
 1. Download the latest `AllumeCompanion-<version>.zip` from
@@ -89,6 +93,10 @@ workspace-Companion
 └─ Projects › Todo / Doing / Done › project-<name>
 ```
 
+The first time you use one of these, the companion asks before it creates workspace-Companion. Opening
+a day for the first time also sets up every month and day board of that year in the background (about
+380 boards, a few minutes).
+
 - **Today**, **Yesterday**, **Tomorrow** and **This Month** take you to that day's or month's board.
   Each month board lays its days out like a calendar.
 - **New Project** creates a `project-…` board in Todo (or Doing; see Settings). Select a project, or
@@ -102,11 +110,30 @@ select and adding the todos you ask for.
 
 Everything stays on your Mac. The app makes no network requests. It works with Allume only through
 Allume's own command-line tool. To find out which cards are selected, it copies them (⌘C) and then
-puts your clipboard back.
+puts your clipboard back. Allume's card data is in the clipboard for a few milliseconds, and the clipboard
+it puts back is marked as [transient](http://nspasteboard.org), so clipboard managers such as Paste don't
+list it as a new copy.
+
+## Uninstall
+
+1. If you turned on **Open at login** (Settings → General), turn it off. Then quit from the menu bar icon
+   and move AllumeCompanion.app to the Trash.
+2. Remove what it keeps on your Mac (the board index, todo list, visit history, thumbnails, the log and its
+   settings):
+
+   ```bash
+   rm -rf ~/Library/Application\ Support/AllumeCompanion ~/Library/Logs/AllumeCompanion.log
+   defaults delete com.maverickli.allume-companion
+   ```
+3. Remove it from System Settings → Privacy & Security → Accessibility.
+4. In Allume, **workspace-Companion** stays with your daily notes and projects. Delete that board if you
+   don't want them. Todos you added elsewhere are ordinary text cards and stay where they are.
 
 ## Feedback
 
 Found a bug or have an idea? [Open an issue](https://github.com/mmssddss/allume-companion/issues).
+For a bug, choose **Copy Diagnostics** in the menu bar (or Settings → Allume) and paste it into the issue:
+versions, setup and the end of the log. Read it over first, since the log has board and card titles in it.
 Building from source and how it works inside (in Chinese): [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## License

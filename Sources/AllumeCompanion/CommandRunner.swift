@@ -266,6 +266,8 @@ final class CommandRunner {
         app.activate()
         guard again.ok else { return }
         try? await Task.sleep(for: .milliseconds(150))
+        // From a reminder Allume may still be coming to the front; a ⌘[ posted before then would repeat.
+        guard await SelectionReader.waitUntilFrontmost(app.processIdentifier) else { return }
         state.appendLog(String(localized: "⌘[ → Allume（让它重画面包屑）"))
         SelectionReader.postCommand(key: 33, to: app.processIdentifier) // kVK_ANSI_LeftBracket
     }

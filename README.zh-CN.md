@@ -27,6 +27,9 @@
 - macOS 14 或更新
 - Allume（[allume.com](https://allume.com) 或 Setapp），并打开它的命令行工具（见下）
 
+在 **Allume 4.0.2（build 10836）** 上测试过。Companion 用到了几处 Allume 没写进文档的行为（复制到剪贴板的内容、
+窗口标题），Allume 以后升级可能让其中一部分失效。设置 → Allume 里会同时列出测试过的版本和你的版本。
+
 ## 安装
 
 1. 在 [Releases](https://github.com/mmssddss/allume-companion/releases) 下载最新的 `AllumeCompanion-<版本>.zip`，
@@ -75,6 +78,9 @@ workspace-Companion
 └─ Projects › Todo / Doing / Done › project-<名字>
 ```
 
+第一次用到这些功能时，Companion 会先问你，再建 workspace-Companion。第一次打开某一天时，还会在后台把这一年的
+月白板和每天的白板一次建好（约 380 块，要几分钟）。
+
 - **今天**、**昨天**、**明天**、**本月**：去那一天或那个月的白板。月白板里的日子按日历排。
 - **新建项目**：在 Todo（或 Doing，设置里改）里建一块 `project-…` 白板。选中一个项目，或者人在项目白板里，
   用**完成**、**移到 Doing**、**移到 Todo** 挪动它，白板里的东西原样跟着走。
@@ -84,11 +90,27 @@ workspace-Companion
 ## 隐私
 
 所有东西都在你的 Mac 上，app 不联网。它只通过 Allume 自己的命令行工具操作 Allume；为了知道选中了哪些卡片，
-它会复制一下（⌘C），然后把剪贴板还原。
+它会复制一下（⌘C），然后把剪贴板还原。Allume 的卡片数据只在剪贴板里停几 ms；还原回去的内容带
+[transient 标记](http://nspasteboard.org)，Paste 这类剪贴板管理器不会把它当成一次新的复制记下来。
+
+## 卸载
+
+1. 如果打开过**登录时自动打开**（设置 → 通用），先关掉。然后从菜单栏图标退出，把 AllumeCompanion.app 移到废纸篓。
+2. 删掉它在 Mac 上存的东西（白板索引、待办列表、最近去过、缩略图、日志和设置）：
+
+   ```bash
+   rm -rf ~/Library/Application\ Support/AllumeCompanion ~/Library/Logs/AllumeCompanion.log
+   defaults delete com.maverickli.allume-companion
+   ```
+3. 在系统设置 → 隐私与安全性 → 辅助功能里把它移除。
+4. Allume 里的 **workspace-Companion** 会留着，里面是你的日记和项目；不要的话删掉这块白板。在别处添加的待办就是普通的
+   文字卡片，留在原处。
 
 ## 反馈
 
 发现问题或有想法，欢迎[提 issue](https://github.com/mmssddss/allume-companion/issues)。
+报 bug 时请在菜单栏（或设置 → Allume）点**复制诊断信息**，贴进 issue：里面有版本、设置和日志的最后一段。
+贴之前看一遍，日志里有白板和卡片的标题。
 从源码构建和内部原理见 [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)。
 
 ## 协议

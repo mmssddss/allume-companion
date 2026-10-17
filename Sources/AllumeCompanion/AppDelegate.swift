@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var readOnlyItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Log.trim()
         ReminderSettings.registerDefaults()
         CompanionSettings.registerDefaults()
         applySetup(AllumeSetup.detect())
@@ -199,6 +200,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         await self.boardModel.refreshOthers(containing: self.state.selectedCardIds, reason: "panel opened")
                     }
                 }
+            } else if let app = NSRunningApplication.runningApplications(withBundleIdentifier: AllumeTracker.bundleID).first, !app.isActive {
+                // Like the real ⌘K, which only exists while Allume is in front (⌘C is not sent otherwise).
+                app.activate()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self.hotKey?.action?() }
             } else {
                 self.hotKey?.action?()
             }
@@ -214,7 +219,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Test hook: SIGUSR2 runs a panel command on the current selection, like clicking its button.
         // `ALLUME_USR2` is a command query exactly as one would type it in the panel
         // ("grid 4", "resize 300x200", "一行", "undo", "今天", "完成"); default "排成 3 列". `open:<board id>` jumps there;
-        // `todo:<text>` adds a todo to the current board; `day:<text>` to that day's daily note; `project:<name>` creates a project; `type:<text>` fills the panel's field
+        // `todo:<text>` adds a todo to the current board; `day:<text>` to that day's daily note; `project:<name>` creates a project; `type:<text>` fills the panel's field;
+        // `companion-consent` shows the workspace-Companion alert (captured to ALLUME_SNAPSHOT, then dismissed);
+        // `diagnostics` is 复制诊断信息
         // (then snapshots it to ALLUME_SNAPSHOT when set).
         signal(SIGUSR2, SIG_IGN)
         usr2Source = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
@@ -226,6 +233,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Task { @MainActor in
                 let query = env["ALLUME_USR2"] ?? "排成 3 列"
                 if query == "test-notification" { self.reminders.sendTest(); return }
+                if query == "companion-consent" { _ = CommandRunner.confirmCreatingRoot(); return }
+                if query == "diagnostics" { self.copyDiagnostics(); return }
                 if query.hasPrefix("type:") {
                     NotificationCenter.default.post(name: .panelQuery, object: String(query.dropFirst(5)))
                     if let path = env["ALLUME_SNAPSHOT"], !path.isEmpty {
@@ -341,6 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             } catch {
                 state.selectedCardIds = []
                 state.selectionMessage = error.localizedDescription
+                if case SelectionReader.Failure.unrecognized = error { state.setStatus(error.localizedDescription, error: true) }
                 state.appendLog(String(localized: "读取选中失败：\(error.localizedDescription)"))
                 Log.info("selection failed after \(Int(Date().timeIntervalSince(stats.t0) * 1000)) ms: \(error.localizedDescription)")
             }
@@ -397,6 +407,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         readOnlyItem = menu.addItem(withTitle: String(localized: "Allume 命令行工具是只读的，查看说明…"), action: #selector(openAllumeSettings), keyEquivalent: "")
         readOnlyItem.isHidden = true
         menu.addItem(withTitle: String(localized: "设置…"), action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: String(localized: "复制诊断信息"), action: #selector(copyDiagnostics), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: String(localized: "退出 Allume Companion"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
@@ -494,5 +505,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     @objc private func openSettings() { settings.show() }
     @objc private func openAllumeSettings() { settings.show(tab: .allume) }
+    @objc private func copyDiagnostics() {
+        let m = settings.model
+        Diagnostics.copy(setup: m.setup, writeMode: m.cliWrite, allumeRunning: m.allumeRunning)
+    }
 
 }

@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Daily notes and projects (docs/DEVELOPMENT.md "日记与项目"). The companion keeps its own corner of the
@@ -307,6 +308,12 @@ extension CommandRunner {
         var reg = companion.registry(ws.id)
         defer { companion.update(ws.id) { $0 = reg } }
         guard let onRoot = await rows(of: ws.root, subBoardsOnly: true) else { return nil }
+        let rootThere = reg.root.map { known in onRoot.contains { $0.document?.id == known } } ?? false
+            || onRoot.contains { $0.kind == "subBoard" && ($0.document?.title ?? $0.title) == CompanionLayout.rootTitle }
+        if !rootThere, !Self.confirmCreatingRoot() {
+            state.setStatus(String(localized: "没有建 workspace-Companion，日记和项目要用到它"))
+            return nil
+        }
         let root = await ensureChild(CompanionLayout.rootTitle, in: ws.root, mounted: onRoot, known: reg.root, workspace: ws.id) {
             // Right of everything on the root board, so nothing of the user's is covered.
             let all = await self.rows(of: ws.root) ?? []
@@ -332,6 +339,35 @@ extension CommandRunner {
         }
         state.boards = boardModel?.index.refs ?? state.boards
         return Base(workspace: ws.id, daily: daily, lists: lists)
+    }
+
+    /// Asks before the first board goes into the user's workspace: workspace-Companion on the
+    /// home board, and (on the first day opened) every month and day board of the year. Asked
+    /// again only if that board is gone. A modal alert activates the companion, so Allume is
+    /// brought back to the front afterwards.
+    static func confirmCreatingRoot() -> Bool {
+        let alert = NSAlert()
+        alert.messageText = String(localized: "在 Allume 里建一块 workspace-Companion 白板？")
+        alert.informativeText = String(localized: "日记和项目都放在这块白板里，它放在 workspace 首页、所有卡片的右边。第一次打开某一天时，会在后台把这一年的月白板和每天的白板一次建好（约 380 块，要几分钟）。之后只在这块白板里新建东西；不想要了，在 Allume 里删掉它就行。")
+        alert.addButton(withTitle: String(localized: "建立"))
+        alert.addButton(withTitle: String(localized: "取消"))
+        NSApp.activate(ignoringOtherApps: true)
+        if let path = ProcessInfo.processInfo.environment["ALLUME_SNAPSHOT"], !path.isEmpty {
+            // Test hook (ALLUME_USR2=companion-consent): capture the alert, then dismiss it as 取消.
+            // A run-loop timer, not the main queue: callers are main-queue jobs, and the main queue
+            // does not drain inside the nested modal loop.
+            let timer = Timer(timeInterval: 0.6, repeats: false) { _ in
+                if let png = OverlayController.capturePNG(windowNumber: alert.window.windowNumber) {
+                    try? png.write(to: URL(fileURLWithPath: path))
+                }
+                NSApp.abortModal()
+            }
+            RunLoop.main.add(timer, forMode: .modalPanel)
+        }
+        let ok = alert.runModal() == .alertFirstButtonReturn
+        Log.info("companion: create workspace-Companion? \(ok ? "yes" : "no")")
+        NSRunningApplication.runningApplications(withBundleIdentifier: AllumeTracker.bundleID).first?.activate()
+        return ok
     }
 
     // MARK: Daily notes

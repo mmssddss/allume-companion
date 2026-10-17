@@ -226,6 +226,7 @@ private final class SettingsWindow: NSWindow {
 struct SettingsPage: View {
     let tab: SettingsTab
     @ObservedObject var model: SettingsModel
+    @State private var diagnosticsCopied = false
 
     static let site = URL(string: "https://maverickli.org")!
     static let github = URL(string: "https://github.com/mmssddss/allume-companion")!
@@ -305,6 +306,16 @@ struct SettingsPage: View {
             .font(.callout)
             .foregroundStyle(allReady ? Color.secondary : Color.orange)
             .fixedSize(horizontal: false, vertical: true)
+        Divider()
+        HStack(spacing: 10) {
+            Button("复制诊断信息") {
+                Diagnostics.copy(setup: model.setup, writeMode: model.cliWrite, allumeRunning: model.allumeRunning)
+                diagnosticsCopied = true
+            }
+            Text(diagnosticsCopied ? "已复制，贴到 GitHub issue 里（先看一遍）" : "出了问题时附在 GitHub issue 里：版本、设置和最近的日志")
+                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        note(verbatim: String(localized: "测试过的 Allume 版本：\(Diagnostics.testedAllume)；当前：\(Diagnostics.allumeVersion(model.setup) ?? "—")"))
     }
 
     @ViewBuilder private var reminders: some View {

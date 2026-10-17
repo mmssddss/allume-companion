@@ -270,6 +270,16 @@
         }
       }
     },
+    "Allume 不在前台，没有读选中" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allume isn't in front, so the selection wasn't read"
+          }
+        }
+      }
+    },
     "Allume 命令行工具是只读的，查看说明…" : {
       "localizations" : {
         "en" : {
@@ -679,6 +689,16 @@
         }
       }
     },
+    "出了问题时附在 GitHub issue 里：版本、设置和最近的日志" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Attach it to a GitHub issue when something goes wrong: versions, setup and the recent log"
+          }
+        }
+      }
+    },
     "切换白板时会记下来" : {
       "localizations" : {
         "en" : {
@@ -735,6 +755,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn't send: %@"
+          }
+        }
+      }
+    },
+    "取消" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
           }
         }
       }
@@ -931,6 +961,16 @@
         }
       }
     },
+    "在 Allume 里建一块 workspace-Companion 白板？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create a workspace-Companion board in Allume?"
+          }
+        }
+      }
+    },
     "在 Allume 里按 ⌘K 打开面板。" : {
       "localizations" : {
         "en" : {
@@ -967,6 +1007,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fill In Date"
+          }
+        }
+      }
+    },
+    "复制诊断信息" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy Diagnostics"
           }
         }
       }
@@ -1109,6 +1159,16 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "已在「%1$@」添加待办「%2$@」"
+          }
+        }
+      }
+    },
+    "已复制，贴到 GitHub issue 里（先看一遍）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied. Paste it into a GitHub issue (read it over first)"
           }
         }
       }
@@ -1315,6 +1375,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Goes first in Projects › %@"
+          }
+        }
+      }
+    },
+    "建立" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Create"
           }
         }
       }
@@ -1895,6 +1965,16 @@
         }
       }
     },
+    "日记和项目都放在这块白板里，它放在 workspace 首页、所有卡片的右边。第一次打开某一天时，会在后台把这一年的月白板和每天的白板一次建好（约 380 块，要几分钟）。之后只在这块白板里新建东西；不想要了，在 Allume 里删掉它就行。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Daily notes and projects live on this board, placed on your workspace's home board to the right of everything else. The first time you open a day, the boards for every month and day of that year are set up in the background (about 380 boards; it takes a few minutes). After that, new boards only go inside this one. If you don't want it any more, just delete it in Allume."
+          }
+        }
+      }
+    },
     "明天" : {
       "localizations" : {
         "en" : {
@@ -2159,6 +2239,16 @@
         }
       }
     },
+    "没有建 workspace-Companion，日记和项目要用到它" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "workspace-Companion wasn't created; daily notes and projects need it"
+          }
+        }
+      }
+    },
     "没有待办：正文第一行写 @todo 的文字卡会出现在这里" : {
       "localizations" : {
         "en" : {
@@ -2225,6 +2315,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Not installed"
+          }
+        }
+      }
+    },
+    "测试过的 Allume 版本：%@；当前：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tested with Allume %1$@; you have %2$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "测试过的 Allume 版本：%1$@；当前：%2$@"
           }
         }
       }
@@ -2575,6 +2681,16 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "认不出 Allume 复制的卡片，可能是 Allume 更新了。菜单栏 → 复制诊断信息，发到 GitHub issue" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't read the cards Allume copied; Allume may have been updated. Menu bar → Copy Diagnostics, then open a GitHub issue"
           }
         }
       }
@@ -2975,6 +3091,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "(untitled)"
+          }
+        }
+      }
+    },
+    "（贴到 GitHub issue 之前请看一遍：日志里有白板和卡片的标题。）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(Read this over before posting it in a GitHub issue: the log contains board and card titles.)"
           }
         }
       }
