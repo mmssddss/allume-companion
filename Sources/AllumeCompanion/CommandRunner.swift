@@ -243,7 +243,21 @@ final class CommandRunner {
     /// showing the previous board's path; any in-app back/forward redraws it with the right path.
     /// So open twice and step back once with ⌘[: we land on the second copy, nothing flashes,
     /// and the only trace is one extra forward entry pointing at the same board.
-    func openBoard(id: String, title: String) async {
+    ///
+    /// `verify` for boards picked from a list (recent, search, todos, a reminder), which can be
+    /// deleted since: Allume would still open one, stranded (see `BoardIndex.isDeleted`), so a
+    /// deleted board is not opened but dropped from the lists, with the panel left open to say so.
+    func openBoard(id: String, title: String, verify: Bool = false) async {
+        if verify, let index = boardModel?.index {
+            state.isRunning = true
+            let gone = await index.isDeleted(id, title: title)
+            state.isRunning = false
+            if gone {
+                index.forget(id)
+                state.setStatus(String(localized: "「\(title)」已经删除，已从列表里去掉"), error: true)
+                return
+            }
+        }
         state.requestHidePanel?()
         guard await exec(["open", id]).ok else { return }
         let again = await exec(["open", id], showStdout: false)

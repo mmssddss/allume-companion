@@ -11,6 +11,7 @@ struct BoardCard: Decodable {
         let body: String?       // text / chain cards: the inline body
         let fileName: String?   // image / pdf / video / file cards
         let byteSize: Int?
+        let cardCount: Int?     // sub-boards: cards on the board
     }
     let id: String
     let kind: String?
@@ -265,6 +266,7 @@ final class BoardModel {
         let loaded = BoardCard.decodeRows(r.stdout)
         store(loaded)
         Log.info("board model: \"\(title)\" loaded \(loaded.count) cards (\(reason), \(ms) ms)")
+        index.reconcile(on: id, rows: loaded, readAt: t0)
         onLoaded?()
         startPrewarm()
     }

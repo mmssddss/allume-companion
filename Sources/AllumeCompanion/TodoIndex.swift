@@ -130,6 +130,16 @@ final class TodoIndex {
         onChanged?()
     }
 
+    /// Boards that turned out deleted: drop their todos.
+    func forget(boardIds: Set<String>) {
+        let next = items.filter { !boardIds.contains($0.boardId) }
+        guard next.count != items.count else { return }
+        Log.info("todo index: dropped \(items.count - next.count) @todo on deleted boards; \(next.count) total")
+        items = next
+        save()
+        onChanged?()
+    }
+
     /// Scans every board of `index` in the background; one scan at a time.
     func refresh(index: BoardIndex, reason: String) {
         guard scan == nil else { return }

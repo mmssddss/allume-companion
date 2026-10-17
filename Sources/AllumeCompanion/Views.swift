@@ -313,7 +313,7 @@ struct CommandPanelView: View {
                  title: v.title.isEmpty ? String(localized: "（无标题白板）") : v.title,
                  hint: state.boards.first { $0.id == v.boardId }?.path ?? "",
                  accessory: relativeTime(v.at), action: String(localized: "跳转")) {
-            Task { await runner.openBoard(id: v.boardId, title: v.title) }
+            Task { await runner.openBoard(id: v.boardId, title: v.title, verify: true) }
         }
     }
 
@@ -321,7 +321,7 @@ struct CommandPanelView: View {
         PanelRow(id: "b:" + b.id, symbol: "rectangle.on.rectangle", tint: CommandGroup.board.tint,
                  title: b.title.isEmpty ? String(localized: "（无标题白板）") : b.title,
                  hint: b.path.isEmpty ? String(localized: "workspace 首页") : b.path, accessory: String(localized: "白板"), action: String(localized: "跳转")) {
-            Task { await runner.openBoard(id: b.id, title: b.title) }
+            Task { await runner.openBoard(id: b.id, title: b.title, verify: true) }
         }
     }
 
@@ -333,7 +333,7 @@ struct CommandPanelView: View {
                         tint: (days ?? 1) <= 0 ? .red : .orange,
                         title: t.label, hint: t.boardTitle,
                         accessory: t.dueLabel ?? String(localized: "待办"), accessoryIsUrgent: (days ?? 1) <= 0, action: String(localized: "跳到白板")) {
-            Task { await runner.openBoard(id: t.boardId, title: t.boardTitle) }
+            Task { await runner.openBoard(id: t.boardId, title: t.boardTitle, verify: true) }
         }
     }
 

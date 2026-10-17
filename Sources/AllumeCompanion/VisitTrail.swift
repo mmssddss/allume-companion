@@ -31,11 +31,12 @@ final class VisitTrail {
         save()
     }
 
-    /// Distinct boards, most recent first, without `current` (where the user already is).
-    func recent(excluding current: String?, limit: Int = 15) -> [Visit] {
+    /// Distinct boards, most recent first, without `current` (where the user already is) and
+    /// boards `keep` turns down (deleted ones).
+    func recent(excluding current: String?, limit: Int = 15, keep: (String) -> Bool = { _ in true }) -> [Visit] {
         var seen = Set<String>()
         var out: [Visit] = []
-        for v in visits.reversed() where v.boardId != current && seen.insert(v.boardId).inserted {
+        for v in visits.reversed() where v.boardId != current && seen.insert(v.boardId).inserted && keep(v.boardId) {
             out.append(v)
             if out.count == limit { break }
         }

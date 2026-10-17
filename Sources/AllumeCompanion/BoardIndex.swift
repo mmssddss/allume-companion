@@ -15,7 +15,7 @@ import Foundation
 @MainActor
 final class BoardIndex {
     struct Entry: Codable, Equatable {
-        let title: String
+        var title: String
         let id: String
         /// Board that lists this one as a sub-board; nil for a workspace root.
         var parentId: String?
@@ -50,6 +50,11 @@ final class BoardIndex {
     private var lastCrawlStart: Date?
     /// Called after every crawl that finished (even one that found nothing new).
     var onCrawled: (() -> Void)?
+    /// Called after `reconcile` or `forget` changed entries, with the ids dropped as deleted
+    /// (a deleted board and every board below it; empty when boards were only added or updated).
+    var onChanged: ((Set<String>) -> Void)?
+    /// Boards `reconcile` is checking for deletion right now.
+    private var checking: Set<String> = []
 
     init() { load() }
 
@@ -109,6 +114,114 @@ final class BoardIndex {
     }
 
     var isCrawling: Bool { crawl != nil }
+
+    // MARK: - Deleted boards
+
+    private struct SearchHit: Decodable { let boardId: String?; let parentBoardId: String? }
+
+    /// Whether board `id` was deleted. Allume soft-deletes the card a board hangs from but keeps
+    /// the board's document, so `allume open` still goes there: a board on nothing, with no
+    /// breadcrumb and nowhere for ⌘[ to go (实测). `search` leaves such boards out and gives the
+    /// board a live one hangs from now, so a board moved elsewhere is found and its new parent
+    /// learned. A board search misses (not indexed yet, several workspaces) is still there while
+    /// the parent the index knows lists it and that parent is not deleted itself.
+    /// A board the index does not have (a crawl dropped it) is looked up by `title` (what the
+    /// list showed) and counts as deleted unless search finds it; it is learned if it does.
+    /// Roots and failed reads count as there.
+    func isDeleted(_ id: String, title: String = "", depth: Int = 0) async -> Bool {
+        guard depth < 8 else { return false }
+        let entry = entries.first { $0.id == id }
+        if let entry, entry.parentId == nil { return false }
+        let name = entry?.title ?? title
+        if !name.isEmpty {
+            let s = await AllumeCLI.run(["search", name, "--limit", "500", "--format", "json"], background: true)
+            guard s.ok || entry != nil else { return false }
+            let hits = s.ok ? ((try? JSONDecoder().decode([SearchHit].self, from: Data(s.stdout.utf8))) ?? []) : []
+            if let hit = hits.first(where: { $0.boardId == id }) {
+                if let p = hit.parentBoardId, p != entry?.parentId {
+                    if entry == nil { learn(title: name, id: id, parentId: p) }
+                    else if let i = entries.firstIndex(where: { $0.id == id }) {
+                        entries[i].parentId = p
+                        save()
+                        Log.info("board index: \"\(name)\" moved to \(p)")
+                    }
+                    onChanged?([])
+                }
+                return false
+            }
+        }
+        guard let parent = entry?.parentId else { return !name.isEmpty }
+        let b = await AllumeCLI.run(["board-content", parent, "--kinds", "subBoard", "--format", "json"], background: true)
+        guard b.ok else { return false }
+        guard BoardCard.decodeRows(b.stdout).contains(where: { $0.document?.id == id }) else { return true }
+        return await isDeleted(parent, depth: depth + 1)
+    }
+
+    /// Drops the deleted board `id` and every board below it.
+    func forget(_ id: String) {
+        var gone: Set<String> = [id]
+        while true {
+            let below = entries.filter { e in !gone.contains(e.id) && e.parentId.map(gone.contains) == true }
+            if below.isEmpty { break }
+            gone.formUnion(below.map(\.id))
+        }
+        let titles = entries.filter { gone.contains($0.id) }.map(\.title)
+        guard !titles.isEmpty else { return }
+        entries.removeAll { gone.contains($0.id) }
+        Log.info("board index: forgot deleted \(titles.map { "\"\($0)\"" }.joined(separator: ", "))")
+        save()
+        onChanged?(gone)
+    }
+
+    /// A full read of board `parentId` (`board-content`, started at `readAt`): the index follows
+    /// what it shows before anything else uses it. Sub-boards new to the index are added; a
+    /// known one renamed, moved here or with a different card count is updated; one the index
+    /// has here that the read no longer shows (deleted, or moved away) is checked in the
+    /// background (`isDeleted`) and forgotten when deleted. Boards learned or seen after the read
+    /// started are left alone: the read predates whatever the companion just did to them.
+    func reconcile(on parentId: String, rows: [BoardCard], readAt: Date) {
+        var changes: [String] = []
+        for row in rows where row.kind == "subBoard" {
+            guard let id = row.document?.id else { continue }
+            let title = row.document?.title ?? row.title ?? ""
+            let count = row.document?.cardCount
+            guard let i = entries.firstIndex(where: { $0.id == id }) else {
+                entries.append(Entry(title: title, id: id, parentId: parentId, lastSeen: Date(timeIntervalSince1970: 0), cardCount: count))
+                changes.append("added \"\(title)\"")
+                continue
+            }
+            guard entries[i].lastSeen < readAt else { continue }
+            if !title.isEmpty, entries[i].title != title {
+                changes.append("\"\(entries[i].title)\" renamed \"\(title)\"")
+                entries[i].title = title
+            }
+            if entries[i].parentId != parentId {
+                changes.append("\"\(title)\" moved here")
+                entries[i].parentId = parentId
+            }
+            if let count, entries[i].cardCount != count {
+                entries[i].cardCount = count
+                changes.append("\"\(title)\" has \(count) cards")
+            }
+        }
+        if !changes.isEmpty {
+            Log.info("board index: \(parentId): " + changes.joined(separator: "; "))
+            save()
+            onChanged?([])
+        }
+
+        let shown = Set(rows.compactMap { $0.document?.id })
+        let missing = entries.filter { $0.parentId == parentId && !shown.contains($0.id) && $0.lastSeen < readAt && !checking.contains($0.id) }
+            .map(\.id)
+        guard !missing.isEmpty else { return }
+        checking.formUnion(missing)
+        Task {
+            for id in missing {
+                if await isDeleted(id) { forget(id) }
+                checking.remove(id)
+            }
+        }
+    }
 
     // MARK: - Crawl
 

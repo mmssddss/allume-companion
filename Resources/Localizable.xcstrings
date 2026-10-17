@@ -513,6 +513,16 @@
         }
       }
     },
+    "「%@」已经删除，已从列表里去掉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” was deleted; removed it from the lists"
+          }
+        }
+      }
+    },
     "一周从：" : {
       "localizations" : {
         "en" : {

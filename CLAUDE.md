@@ -60,6 +60,10 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   后台调用用 `AllumeCLI.run(…, background: true)`，日志里是 `cli[bg]`；每次 ⌘K 打印一行"⌘K 统计"，前台应为 0。
   白板文档 id 的前缀等于它上面卡片 id 的 scope 前缀，可用来在同名白板间分辨。`open -W` 并发时偶发
   "Unable to block on applications"，`AllumeCLI.run` 统一重试一次。
+- 删掉的白板：Allume 只软删挂它的卡片，白板文档还在，`allume open` 进得去但无处可回（面包屑、⌘[ 都失效）；`card-content`
+  对那张卡照样返回、没有删除标记，只有 `board-content <父白板>` 和 `search` 不再列它。`BoardIndex`（boards.json）是白板搜索、
+  最近去过、待办的唯一来源，不一致时先改它：`reconcile`（每次当前白板装入后，增/改名/挪动/卡片数/删）、`isDeleted` + `forget`
+  （从列表跳转前 `openBoard(…, verify: true)`）。测：`ALLUME_USR2=open:<白板文档id>` 走的就是带 verify 的跳转。
 - Allume 画布上能直接选到内嵌子白板里的卡片，窗口标题仍是父白板：`BoardModel` 除当前白板外还保留最近选中过的其他白板
   （`lookup` 跨白板找、`adopt` 收下回退路径读到的整块、`refreshOthers` 面板打开后在后台刷新它们）。
 - ⌘K 的面板显示时间几乎全是 `setFrame(display: true)` 的重排，AX 查窗口只要 1–2 ms；所以关面板时就 `rearm`（清输入框、

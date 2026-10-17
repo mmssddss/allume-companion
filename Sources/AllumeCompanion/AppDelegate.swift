@@ -47,13 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         trail = VisitTrail()
         todoIndex = TodoIndex()
         reminders = DueReminders()
-        state.recentBoards = trail.recent(excluding: nil)
+        refreshRecent(excluding: nil)
         state.todos = todoIndex.sorted
         state.boards = boardIndex.refs
         boardModel.onSwitched = { [weak self] id, title in
             guard let self else { return }
             self.trail.record(boardId: id, title: title)
-            self.state.recentBoards = self.trail.recent(excluding: id)
+            self.refreshRecent(excluding: id)
         }
         boardModel.onLoaded = { [weak self] in
             guard let self else { return }
@@ -75,7 +75,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             afterCrawl?()
             guard let self else { return }
             self.state.boards = self.boardIndex.refs
+            self.refreshRecent(excluding: self.boardModel.boardId)
             self.todoIndex.refresh(index: self.boardIndex, reason: "index crawled")
+        }
+        boardIndex.onChanged = { [weak self] gone in
+            guard let self else { return }
+            self.state.boards = self.boardIndex.refs
+            self.refreshRecent(excluding: self.boardModel.boardId)
+            self.todoIndex.forget(boardIds: gone)
         }
         todoTimer = Timer.scheduledTimer(withTimeInterval: TodoIndex.interval, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -85,7 +92,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         reminders.openBoard = { [weak self] id, title in
             guard let self else { return }
-            Task { await self.runner.openBoard(id: id, title: title) }
+            Task { await self.runner.openBoard(id: id, title: title, verify: true) }
         }
         reminders.onAuthorized = { [weak self] in
             guard let self else { return }
@@ -238,7 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     Log.info("panel log:\n" + self.state.log); return
                 }
                 if query.hasPrefix("open:") {
-                    await self.runner.openBoard(id: String(query.dropFirst(5)), title: "test")
+                    await self.runner.openBoard(id: String(query.dropFirst(5)), title: "test", verify: true)
                     Log.info("panel log:\n" + self.state.log); return
                 }
                 if let match = CommandCatalog.matches(for: query).first {
@@ -263,6 +270,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         infoSource?.resume()
 
+    }
+
+    /// "最近去过" as the index has it: without boards it no longer has (deleted), under the
+    /// title it has now (renamed). Everything as recorded until the first crawl.
+    private func refreshRecent(excluding current: String?) {
+        let titles = Dictionary(boardIndex.entries.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
+        state.recentBoards = trail.recent(excluding: current) { titles.isEmpty || titles[$0] != nil }
+            .map { v in titles[v.boardId].map { VisitTrail.Visit(boardId: v.boardId, title: $0, at: v.at) } ?? v }
     }
 
     private func updateHotKey(allumeActive: Bool) {
