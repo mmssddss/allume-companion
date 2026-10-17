@@ -61,7 +61,12 @@ final class CommandRunner {
         if !r.stderr.isEmpty { state.appendLog("stderr: " + r.stderr) }
         if !r.ok {
             state.appendLog("exit \(r.status)")
-            state.setStatus(r.stderr.split(separator: "\n").first.map(String.init) ?? "命令失败（exit \(r.status)）", error: true)
+            if AllumeSetup.isReadOnlyError(r.stderr) {
+                state.cliWrite = .readOnly
+                state.setStatus("Allume 的命令行工具是只读的：在 Allume 的设置 → CLI 里允许写入", error: true)
+            } else {
+                state.setStatus(r.stderr.split(separator: "\n").first.map(String.init) ?? "命令失败（exit \(r.status)）", error: true)
+            }
         }
         return r
     }

@@ -31,6 +31,10 @@ struct BoardRef: Identifiable, Equatable {
 final class AppState: ObservableObject {
     @Published var axTrusted = false
     @Published var allumeRunning = false
+    /// Whether Allume and its CLI are installed (`AllumeSetup.detect`).
+    @Published var setup = AllumeSetup()
+    /// Whether the CLI may write (`AllumeSetup.probeWriteMode`, or learned from a failed command).
+    @Published var cliWrite: AllumeSetup.WriteMode = .unknown
     @Published var boardTitle = ""
     @Published var selectedCardIds: [String] = []
     /// True between ⌘K and the clipboard answer (and, when the board model has the cards,

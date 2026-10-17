@@ -4,7 +4,9 @@ import ApplicationServices
 /// Follows the Allume main window (frame + active state) through the Accessibility API.
 /// Frames are reported in AppKit screen coordinates (origin bottom-left of the primary display).
 final class AllumeTracker {
-    static let bundleID = "com.musesoftware.museios-setapp"
+    /// The installed edition's bundle id (`AllumeSetup.detect`, from the CLI symlink); set at
+    /// launch and whenever 设置 notices a change.
+    nonisolated(unsafe) static var bundleID = AllumeSetup.fallbackBundleID
 
     struct WindowInfo: Equatable {
         var frame: CGRect

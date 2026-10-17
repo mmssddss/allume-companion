@@ -36,15 +36,27 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 
 ### 设置
 
-`Settings.swift`，一个普通窗口（⌘W 关）：
+`Settings.swift`，照 Allume 自己的设置窗口做：顶上一排带图标的标签页，窗口标题跟着标签走，高度按那一页的内容（⌘W 关）。
+启动时 Allume 或它的命令行工具缺了，或者第一次检查发现命令行工具是只读的，会直接打开到"Allume"页；菜单栏第一项也会变成
+"没找到 Allume…""Allume 命令行工具还没装…"或"打开 Allume"，只读时多一项提示。
 
-- **通用**：登录时自动打开（`SMAppService.mainApp`；系统要求批准时给"打开登录项…"按钮）。
-- **权限**：辅助功能、通知各显示是否已允许，没允许时给"打开设置…"。窗口开着时每秒重查，在系统设置里打开后这里立刻变。
-- **到期提醒**：开关和提醒时间（默认 9:00，存在 UserDefaults 的 `reminders.*`），改了就撤掉已排的提醒按新时间重排；发一条测试通知。
-- **待办与缓存**：待办数 / 到期数 / 白板数、上次扫描时间、重新扫描；清空缩略图缓存（内存 + `thumbs/`）；在访达中显示日志。
+- **通用**：登录时自动打开（`SMAppService.mainApp`；系统要求批准时给"打开登录项…"）；辅助功能、通知是否已允许，
+  没允许时给"打开设置…"。窗口开着时每秒重查，在系统设置里打开后这里立刻变。
+- **Allume**（按顺序检查，下面一行橙字说下一步做什么）：
+  1. 装了没有：顺着 `/usr/local/bin/allume` 的链接找到装它的 Allume.app，用那个 app 的 bundle id 跟踪窗口，
+     所以 Setapp 版和其他版本都认；没有 CLI 时在 /Applications、/Applications/Setapp、~/Applications 找 `Allume.app`
+     （不认 `Muse.app`：同名的可能是别的 app）。没装给 allume.com 链接。
+  2. 在运行：CLI 要连着运行中的 Allume。
+  3. 命令行工具：在 Allume 的设置 → CLI 里装。
+  4. 写入权限：CLI 默认只读，排列、改大小、添加待办都要 read-write。没有命令能直接查模式，所以对一个不存在的卡片 id
+     发 `card-move`：只读时回 "the CLI is in read-only mode"，可写时回 "No card or chain with id …"，什么都不会改。
+     命令执行时碰到只读也会记下来，面板底栏提示去哪里改。
+- **提醒**：开关和提醒时间（默认 9:00，存在 UserDefaults 的 `reminders.*`），改了就撤掉已排的提醒按新时间重排；发一条测试通知。
+- **数据**：待办数 / 到期数 / 白板数、上次扫描时间、重新扫描；清空缩略图缓存（内存 + `thumbs/`）；在访达中显示日志。
 - **关于**：版本、Maverick Li 署名、[maverickli.org](https://maverickli.org)、[GitHub](https://github.com/mmssddss/allume-companion)。
 
-测试：`ALLUME_SETTINGS_SNAPSHOT=/path.png open build/AllumeCompanion.app` 启动时打开设置窗口，1.5 秒后把整个窗口写成 PNG。
+测试：`ALLUME_SETTINGS_SNAPSHOT=/path.png open build/AllumeCompanion.app` 启动时打开设置窗口，1.5 秒后把整个窗口写成 PNG；
+`ALLUME_SETTINGS_TAB=general|allume|reminders|data|about` 选页，`ALLUME_FAKE_SETUP=noapp|nocli|readonly` 假装缺东西。
 
 ## 发布（Release）
 
@@ -75,7 +87,7 @@ scripts/release.sh 0.0.3 --publish  # 另外打 tag v0.0.3、push、建 GitHub R
 | 权限 | 用途 | 没有会怎样 |
 |---|---|---|
 | 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，面板才能贴在窗口顶部；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C（以及跳白板后的 ⌘[） | 面板不出现，⌘K 读不到选中 |
-| Allume → Preferences → Command Line 里的读写模式 | `card-gather` / `card-move` 都是写操作 | 面板里显示 `allume card-gather is unavailable: the CLI is in read-only mode`。如果设置里已经是 read-write 还报这个，见下面"CLI 为什么要用 open 启动" |
+| Allume 的设置 → CLI 里的读写模式 | `card-gather` / `card-move` 都是写操作 | 面板里显示 `allume card-gather is unavailable: the CLI is in read-only mode`。如果设置里已经是 read-write 还报这个，见下面"CLI 为什么要用 open 启动" |
 
 首次启动会弹系统提示；也可以在设置窗口的"权限"里点"打开设置…"。不需要"输入监控"：全局快捷键用的是
 Carbon `RegisterEventHotKey`，不需要额外权限。注册了的全局快捷键会在所有 app 里吞掉这个按键，
@@ -419,7 +431,8 @@ Sources/AllumeCompanion/
   DateWords.swift                  自然语言到期日：规则表 + NSDataDetector 兜底，补全和自动替换
   BoardViewport.swift              用标题 AXTextField 拟合缩放/偏移，算出视口中心，找不压卡的空位
   DueReminders.swift               有日期的待办排系统通知，点通知跳白板（reminders.json 记已响过的）；ReminderSettings 开关和时间
-  Settings.swift                   设置窗口：登录时打开、权限状态、到期提醒、待办与缓存、关于
+  Settings.swift                   设置窗口：Allume 安装检查、登录时打开、权限状态、到期提醒、待办与缓存、关于
+  AllumeInstall.swift              AllumeSetup：从 CLI 链接找到 Allume.app 和 bundle id；CLI 写入模式探测
   ThumbnailLoader.swift            按类型取缩略图（image/pdf 字节、subBoard 交给 BoardThumbnailRenderer），NSCache 按卡片 id 缓存
   BoardThumbnailRenderer.swift     用 board-content 行离屏画 240×180 的白板缩略（文字、图片、PDF、嵌套白板），按白板 id 缓存到内存 + thumbs/ 目录
   OverlayController.swift          命令面板 NSPanel 及定位

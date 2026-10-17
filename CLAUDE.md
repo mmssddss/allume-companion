@@ -82,7 +82,14 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   设置窗口"发一条测试通知"直接投一条并记日志（`ALLUME_USR2=test-notification` + `kill -USR2` 同效）。
   提醒开关和时间在 `ReminderSettings`（UserDefaults），触发时刻 = 到期日 + 设置的时分（`TodoIndex` 里的 9 点只是到期日本身）；
   改设置走 `DueReminders.reschedule`（先撤掉所有 `due-` 待发通知再排）。
-- 设置窗口（`Settings.swift`，菜单栏 → 设置… ⌘,）：`SettingsModel` 的数据窗口开着时每秒 `refresh`；模型在
+- 安装检查（`AllumeInstall.swift`，README "设置"）：`AllumeSetup.detect` 从 `/usr/local/bin/allume` 的链接目标往上找 `.app`，
+  它的 bundle id 写进 `AllumeTracker.bundleID`（以前写死 Setapp 版的 `com.musesoftware.museios-setapp`，现在只是兜底）。
+  写入模式没有查询命令、偏好文件也读不到，用 `card-move --id 000…:000…` 探测（只读 → "read-only mode"，可写 → "No card"），
+  要 Allume 在运行。测：`ALLUME_FAKE_SETUP=noapp|nocli|readonly` 配 `ALLUME_SETTINGS_SNAPSHOT`。`/Applications/Muse.app` 在本机是
+  别的 app（`com.meta.endo`），不能按名字认。
+- 设置窗口（`Settings.swift`，菜单栏 → 设置… ⌘,）：`NSTabViewController`（`.toolbar` + `toolbarStyle = .preference`）
+  每页一个 `NSHostingController`，`sizingOptions = .intrinsicContentSize`（设成 `[]` 时 `fittingSize` 是 0，窗口塌成 0 高、
+  截图也抓不到），切页时 `fitWindow` 按 `fittingSize` 改窗口高度、顶边不动。`SettingsModel` 的数据窗口开着时每秒 `refresh`；模型在
   `registerDefaults` 之前就建好了，所以提醒设置只在 `refresh` 里读。登录项用 `SMAppService.mainApp`（没在本机点过开关）。
   出图：`ALLUME_SETTINGS_SNAPSHOT=/path.png open build/AllumeCompanion.app`（用 `OverlayController.capturePNG` 抓自己的窗口）。
   面板模式在 `AppState.panelMode`，Esc 在列表里是返回不是关闭。

@@ -4,7 +4,7 @@ import ApplicationServices
 import SwiftUI
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     let state = AppState()
     private var statusItem: NSStatusItem!
     private var tracker = AllumeTracker()
@@ -22,9 +22,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var usr2Source: DispatchSourceSignal?
     private var infoSource: DispatchSourceSignal?
     private let settings = SettingsWindowController()
+    /// The menu's first item: 打开面板, or what to do first when Allume is not ready.
+    private var primaryItem: NSMenuItem!
+    private var readOnlyItem: NSMenuItem!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ReminderSettings.registerDefaults()
+        applySetup(AllumeSetup.detect())
         runner = CommandRunner(state: state)
         overlay = OverlayController(state: state, runner: runner)
         // Current-board model: the index maps the window title to a board id (cached in
@@ -89,10 +93,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setupStatusItem()
         setupSettings()
         requestAccessibility()
+        // Nothing would happen otherwise (no Allume window to follow, ⌘K never registered,
+        // every CLI call failing): say what is missing.
+        if !state.setup.ready { settings.show(tab: .allume) }
         // Test hook: `ALLUME_SETTINGS_SNAPSHOT=/path.png` opens 设置 at launch and writes the
         // window (title bar included) there a moment later.
         if let path = ProcessInfo.processInfo.environment["ALLUME_SETTINGS_SNAPSHOT"], !path.isEmpty {
-            settings.show()
+            settings.show(tab: ProcessInfo.processInfo.environment["ALLUME_SETTINGS_TAB"].flatMap(SettingsTab.init(rawValue:)))
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 guard let n = self?.settings.windowNumber, let png = OverlayController.capturePNG(windowNumber: n) else { return }
                 try? png.write(to: URL(fileURLWithPath: path))
@@ -104,7 +111,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 guard let self else { return }
                 Log.info("allume window: \(info.map { "\($0.frame) active=\($0.isActive) title=\($0.title)" } ?? "none")")
+                let wasRunning = self.state.allumeRunning
                 self.state.allumeRunning = info != nil
+                // The write-mode probe needs Allume up: ask once it is, until we know.
+                if info != nil, !wasRunning, self.state.setup.ready, self.state.cliWrite != .writable { self.probeWriteMode() }
+                if (info != nil) != wasRunning { self.settings.model.refresh() }
                 self.state.boardTitle = info?.title ?? ""
                 self.boardModel.allumeActive = info?.isActive ?? false
                 if let title = info?.title { self.boardModel.setTitle(title) }
@@ -350,7 +361,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "Allume Companion")
         let menu = NSMenu()
-        menu.addItem(withTitle: "打开面板  ⌘K", action: #selector(menuRead), keyEquivalent: "")
+        menu.delegate = self
+        primaryItem = menu.addItem(withTitle: "打开面板  ⌘K", action: #selector(menuPrimary), keyEquivalent: "")
+        // Shown only while the CLI is read-only: the panel opens, but arranging and adding fail.
+        readOnlyItem = menu.addItem(withTitle: "Allume 命令行工具是只读的，查看说明…", action: #selector(openAllumeSettings), keyEquivalent: "")
+        readOnlyItem.isHidden = true
         menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出 Allume Companion", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -376,6 +391,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.reminders.reschedule(self.todoIndex.items)
         }
+        m.setupFacts = { [weak self] in
+            guard let self else { return (AllumeSetup(), false, .unknown) }
+            self.refreshSetup()
+            return (self.state.setup, self.state.allumeRunning, self.state.cliWrite)
+        }
+        m.checkWriteMode = { [weak self] in self?.probeWriteMode() }
         m.indexFacts = { [weak self] in
             guard let self else { return (0, 0, nil, false, 0) }
             return (self.todoIndex.items.count, self.todoIndex.overdueCount, self.todoIndex.scannedAt,
@@ -383,7 +404,65 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func menuRead() { readSelectionAndShow() }
+    /// The first menu item says what is possible right now (re-checked every time the menu opens).
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshSetup()
+        let s = state.setup
+        primaryItem.title = !s.appInstalled ? "没找到 Allume，查看安装说明…"
+            : !s.cliInstalled ? "Allume 命令行工具还没装，查看说明…"
+            : !state.allumeRunning ? "打开 Allume"
+            : "打开面板  ⌘K"
+        readOnlyItem.isHidden = state.cliWrite != .readOnly
+    }
+
+    @objc private func menuPrimary() {
+        let s = state.setup
+        guard s.ready else { settings.show(tab: .allume); return }
+        guard let url = s.appURL else { return }
+        if !state.allumeRunning {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            return
+        }
+        // The panel sits on Allume's window and only shows while Allume is in front.
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: AllumeTracker.bundleID).first, !app.isActive {
+            app.activate()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.readSelectionAndShow() }
+        } else {
+            readSelectionAndShow()
+        }
+    }
+
+    /// Asks the CLI whether it may write. The first answer of a launch being "read-only" opens
+    /// 设置, where the Allume section says how to switch it.
+    private var probedOnce = false
+    private func probeWriteMode() {
+        Task { @MainActor in
+            let mode = await AllumeSetup.probeWriteMode()
+            if mode != .unknown { state.cliWrite = mode }
+            settings.model.refresh()
+            if mode == .readOnly, !probedOnce { settings.show(tab: .allume) }
+            if mode != .unknown { probedOnce = true }
+        }
+    }
+
+    /// Takes a fresh `AllumeSetup`: the tracker follows that edition's bundle id.
+    private func applySetup(_ s: AllumeSetup) {
+        state.setup = s
+        if let id = s.bundleID { AllumeTracker.bundleID = id }
+        Log.info("allume setup: \(s.summary)")
+    }
+
+    /// Re-detects (cheap: a symlink and a few paths). Becoming ready starts what launch skipped.
+    private func refreshSetup() {
+        let s = AllumeSetup.detect()
+        guard s != state.setup else { return }
+        let wasReady = state.setup.ready
+        applySetup(s)
+        tracker.attachIfNeeded()
+        tracker.refresh()
+        if s.ready && !wasReady { boardIndex.refresh(reason: "allume installed") }
+    }
     @objc private func openSettings() { settings.show() }
+    @objc private func openAllumeSettings() { settings.show(tab: .allume) }
 
 }
