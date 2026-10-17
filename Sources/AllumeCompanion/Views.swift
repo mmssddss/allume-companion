@@ -86,7 +86,7 @@ struct PanelRow: Identifiable {
     /// What kind of row, or a short status ("今天", "已过期 2 天", "3 小时前").
     var accessory: String? = nil
     var accessoryIsUrgent = false
-    var action = "执行"
+    var action = String(localized: "执行")
     let run: () -> Void
 }
 
@@ -140,12 +140,14 @@ struct CommandPanelView: View {
 
     /// Typing: commands, boards and todos, each section ranked by how well its best row
     /// matches (per-word, same 4…1 scale); ties keep that order.
+    /// Section titles have keys of their own: in English the section is "Commands" while the
+    /// row tag of the same Chinese word is "Command".
     private func searchSections(_ q: String) -> [PanelSection] {
         var ranked: [(score: Double, section: PanelSection)] = []
         let cmds = matches
         if let best = cmds.first {
             let words = max(1, CommandCatalog.normalizedWords(q).count)
-            ranked.append((Double(best.score) / Double(words), PanelSection(id: "cmd", title: "命令", rows: cmds.map(commandRow))))
+            ranked.append((Double(best.score) / Double(words), PanelSection(id: "cmd", title: String(localized: "section.commands", defaultValue: "命令"), rows: cmds.map(commandRow))))
         }
         let boards = state.boards
             .map { (b: $0, s: CommandCatalog.textScore(q, $0.title)) }
@@ -153,7 +155,7 @@ struct CommandPanelView: View {
             .sorted { $0.s != $1.s ? $0.s > $1.s : $0.b.lastSeen > $1.b.lastSeen }
             .prefix(Self.searchLimit)
         if let best = boards.first {
-            ranked.append((Double(best.s), PanelSection(id: "boards", title: "白板", rows: boards.map { searchBoardRow($0.b) })))
+            ranked.append((Double(best.s), PanelSection(id: "boards", title: String(localized: "section.boards", defaultValue: "白板"), rows: boards.map { searchBoardRow($0.b) })))
         }
         let todos = state.todos
             .map { (t: $0, s: CommandCatalog.textScore(q, $0.label)) }
@@ -161,7 +163,7 @@ struct CommandPanelView: View {
             .sorted { $0.s > $1.s } // stable: due order within a score
             .prefix(Self.searchLimit)
         if let best = todos.first {
-            ranked.append((Double(best.s), PanelSection(id: "todos", title: "待办", rows: todos.map { todoRow($0.t, idPrefix: "t:") })))
+            ranked.append((Double(best.s), PanelSection(id: "todos", title: String(localized: "section.todos", defaultValue: "待办"), rows: todos.map { todoRow($0.t, idPrefix: "t:") })))
         }
         return ranked.enumerated()
             .sorted { $0.element.score != $1.element.score ? $0.element.score > $1.element.score : $0.offset < $1.offset }
@@ -191,15 +193,15 @@ struct CommandPanelView: View {
             place = "Daily Notes › \(iso) \(CompanionLayout.weekdayName(year: t.year, month: t.month, day: t.day))"
         } else {
             let board = runner.boardModel?.title ?? state.boardTitle
-            place = board.isEmpty ? "当前白板" : "「\(board)」"
+            place = board.isEmpty ? String(localized: "当前白板") : String(localized: "「\(board)」")
         }
         let dueText = draft.due.flatMap { iso in DateWords.match(in: iso, atEnd: true).map { DateWords.describe($0.date) } }
-        let empty = toDay ? "日期写在开头或末尾，不写就是今天：明天、下周二、10-20"
-                          : "日期写在开头或末尾：明天、下周二、月底、3天后、10-20"
+        let empty = toDay ? String(localized: "日期写在开头或末尾，不写就是今天：明天、下周二、10-20")
+                          : String(localized: "日期写在开头或末尾：明天、下周二、月底、3天后、10-20")
         var rows = [PanelRow(id: "add-todo-draft", symbol: toDay ? "calendar.badge.plus" : "plus", tint: CommandGroup.create.tint,
-                             title: draft.text.isEmpty ? "输入待办内容" : draft.body,
-                             hint: draft.text.isEmpty ? empty : "贴到\(place)" + (draft.due == nil ? "，没有到期日" : ""),
-                             accessory: dueText, action: toDay ? "记到那天" : "添加") {
+                             title: draft.text.isEmpty ? String(localized: "输入待办内容") : draft.body,
+                             hint: draft.text.isEmpty ? empty : String(localized: "贴到\(place)") + (draft.due == nil ? String(localized: "，没有到期日") : ""),
+                             accessory: dueText, action: toDay ? String(localized: "记到那天") : String(localized: "添加")) {
             guard !draft.text.isEmpty else { return }
             Task { toDay ? await runner.addTodoToDay(raw) : await runner.addTodo(raw) }
         }]
@@ -208,7 +210,7 @@ struct CommandPanelView: View {
                 let filled = raw.replacingCharacters(in: c.fragment, with: DateWords.iso(p.date))
                 rows.append(PanelRow(id: "date-" + p.text, symbol: "calendar", tint: .red, title: p.text,
                                      hint: "\(DateWords.iso(p.date)) · \(DateWords.describe(p.date))",
-                                     accessory: "日期", action: "填入日期") {
+                                     accessory: String(localized: "日期"), action: String(localized: "填入日期")) {
                     query = filled
                 })
             }
@@ -222,9 +224,9 @@ struct CommandPanelView: View {
         let title = CompanionLayout.projectTitle(raw)
         let list = CompanionSettings.newProjectStatus.title
         return [PanelRow(id: "add-project-draft", symbol: "folder.badge.plus", tint: CommandGroup.create.tint,
-                         title: title.isEmpty ? "输入项目名字" : title,
-                         hint: title.isEmpty ? "会加上 project- 前缀" : "建在 Projects › \(list)，排在最前",
-                         accessory: list, action: "新建") {
+                         title: title.isEmpty ? String(localized: "输入项目名字") : title,
+                         hint: title.isEmpty ? String(localized: "会加上 project- 前缀") : String(localized: "建在 Projects › \(list)，排在最前"),
+                         accessory: list, action: String(localized: "新建")) {
             guard !title.isEmpty else { return }
             Task { await runner.addProject(raw) }
         }]
@@ -254,44 +256,44 @@ struct CommandPanelView: View {
 
     private func commandRow(_ m: CommandMatch) -> PanelRow {
         var hint = m.spec.hint
-        var accessory = "命令"
+        var accessory = String(localized: "命令")
         var urgent = false
-        var action = "执行"
+        var action = String(localized: "执行")
         switch m.kind {
         case .recentBoards:
-            hint = state.recentBoards.first.map { "上一站「\($0.title)」" } ?? "切换白板时会记下来"
+            hint = state.recentBoards.first.map { String(localized: "上一站「\($0.title)」") } ?? String(localized: "切换白板时会记下来")
             accessory = state.recentBoards.first.map { relativeTime($0.at) } ?? accessory
-            action = "打开列表"
+            action = String(localized: "打开列表")
         case .allTodos:
             let due = state.todos.filter { ($0.daysLeft() ?? 1) <= 0 }.count
-            hint = state.todos.isEmpty ? "还没有 @todo 卡" : "\(state.todos.count) 条"
-            if due > 0 { accessory = "\(due) 条到期"; urgent = true }
-            action = "打开列表"
+            hint = state.todos.isEmpty ? String(localized: "还没有 @todo 卡") : String(localized: "\(state.todos.count) 条")
+            if due > 0 { accessory = String(localized: "\(due) 条到期"); urgent = true }
+            action = String(localized: "打开列表")
         case .undo:
-            if let label = state.undoLabel { hint = "撤回「\(label)」" }
-        case .home, .openSelectedBoard: action = "跳转"
-        case .addTodo, .addToDay: action = "新建"
+            if let label = state.undoLabel { hint = String(localized: "撤回「\(label)」") }
+        case .home, .openSelectedBoard: action = String(localized: "跳转")
+        case .addTodo, .addToDay: action = String(localized: "新建")
         case .day(let offset):
             let t = CompanionLayout.today(offset: offset)
             hint = CompanionLayout.dayTitle(t.year, t.month, t.day) + " " + CompanionLayout.weekdayName(year: t.year, month: t.month, day: t.day)
-            action = "打开"
+            action = String(localized: "打开")
         case .thisMonth:
             let t = CompanionLayout.today()
             hint = CompanionLayout.monthTitle(t.year, t.month)
-            action = "打开"
+            action = String(localized: "打开")
         case .addProject:
-            hint = "建在 \(CompanionSettings.newProjectStatus.title) 里，名字前加 project-"
+            hint = String(localized: "建在 \(CompanionSettings.newProjectStatus.title) 里，名字前加 project-")
         case .moveProjects(let target):
             let (items, fromBoard) = runner.projectTargets()
             let todo = items.filter { $0.status != target }
-            hint = todo.count == 1 ? (fromBoard ? "当前白板「\(todo[0].title)」" : "「\(todo[0].title)」") : "\(todo.count) 个 project"
+            hint = todo.count == 1 ? (fromBoard ? String(localized: "当前白板「\(todo[0].title)」") : String(localized: "「\(todo[0].title)」")) : String(localized: "\(todo.count) 个 project")
             if target == .done { hint += " → Done" }
-            action = target == .done ? "完成" : "移动"
+            action = target == .done ? String(localized: "完成") : String(localized: "移动")
         default: break
         }
         var title = m.title
         if case .openSelectedBoard = m.kind, let card = state.selectedCards.first, !card.title.isEmpty {
-            title = "打开「\(card.title)」"
+            title = String(localized: "打开「\(card.title)」")
         }
         return PanelRow(id: m.id, symbol: m.spec.symbol, tint: m.spec.group.tint, title: title, hint: hint,
                         accessory: accessory, accessoryIsUrgent: urgent, action: action) {
@@ -308,17 +310,17 @@ struct CommandPanelView: View {
 
     private func boardRow(_ v: VisitTrail.Visit) -> PanelRow {
         PanelRow(id: v.boardId, symbol: "rectangle.on.rectangle", tint: CommandGroup.board.tint,
-                 title: v.title.isEmpty ? "（无标题白板）" : v.title,
+                 title: v.title.isEmpty ? String(localized: "（无标题白板）") : v.title,
                  hint: state.boards.first { $0.id == v.boardId }?.path ?? "",
-                 accessory: relativeTime(v.at), action: "跳转") {
+                 accessory: relativeTime(v.at), action: String(localized: "跳转")) {
             Task { await runner.openBoard(id: v.boardId, title: v.title) }
         }
     }
 
     private func searchBoardRow(_ b: BoardRef) -> PanelRow {
         PanelRow(id: "b:" + b.id, symbol: "rectangle.on.rectangle", tint: CommandGroup.board.tint,
-                 title: b.title.isEmpty ? "（无标题白板）" : b.title,
-                 hint: b.path.isEmpty ? "workspace 首页" : b.path, accessory: "白板", action: "跳转") {
+                 title: b.title.isEmpty ? String(localized: "（无标题白板）") : b.title,
+                 hint: b.path.isEmpty ? String(localized: "workspace 首页") : b.path, accessory: String(localized: "白板"), action: String(localized: "跳转")) {
             Task { await runner.openBoard(id: b.id, title: b.title) }
         }
     }
@@ -330,7 +332,7 @@ struct CommandPanelView: View {
         return PanelRow(id: idPrefix + t.cardId, symbol: (days ?? 1) <= 0 ? "exclamationmark" : "checkmark",
                         tint: (days ?? 1) <= 0 ? .red : .orange,
                         title: t.label, hint: t.boardTitle,
-                        accessory: t.dueLabel ?? "待办", accessoryIsUrgent: (days ?? 1) <= 0, action: "跳到白板") {
+                        accessory: t.dueLabel ?? String(localized: "待办"), accessoryIsUrgent: (days ?? 1) <= 0, action: String(localized: "跳到白板")) {
             Task { await runner.openBoard(id: t.boardId, title: t.boardTitle) }
         }
     }
@@ -438,7 +440,7 @@ struct CommandPanelView: View {
         let show = state.panelMode == .commands && !state.selectedCardIds.isEmpty
         let n = state.selectedCardIds.count
         let title = state.selectedCards.first?.title ?? ""
-        let label = n == 1 && !title.isEmpty ? (title.count > 14 ? title.prefix(13) + "…" : title) : "\(n) 张卡"
+        let label = n == 1 && !title.isEmpty ? (title.count > 14 ? title.prefix(13) + "…" : title) : String(localized: "\(n) 张卡")
         return HStack(spacing: 8) {
             if show {
                 CardStackView(cards: state.selectedCards, count: n)
@@ -452,11 +454,11 @@ struct CommandPanelView: View {
 
     private var footerKeys: String {
         switch state.panelMode {
-        case .commands: return "↑↓ 选择 · ⏎ 执行 · Esc 关闭"
-        case .addTodo: return "⏎ 添加 · Tab 补全日期 · Esc 返回"
-        case .addToDay: return "⏎ 记到那天 · Tab 补全日期 · Esc 返回"
-        case .addProject: return "⏎ 新建 · Esc 返回"
-        default: return "↑↓ 选择 · ⏎ 跳转 · Esc 返回"
+        case .commands: return String(localized: "↑↓ 选择 · ⏎ 执行 · Esc 关闭")
+        case .addTodo: return String(localized: "⏎ 添加 · Tab 补全日期 · Esc 返回")
+        case .addToDay: return String(localized: "⏎ 记到那天 · Tab 补全日期 · Esc 返回")
+        case .addProject: return String(localized: "⏎ 新建 · Esc 返回")
+        default: return String(localized: "↑↓ 选择 · ⏎ 跳转 · Esc 返回")
         }
     }
 
@@ -478,12 +480,12 @@ struct CommandPanelView: View {
     /// (timeout, no Allume…) goes to the log, not in the user's face.
     private var placeholder: String {
         switch state.panelMode {
-        case .recentBoards: return "筛选最近去过的白板…"
-        case .allTodos: return "筛选待办…"
-        case .addTodo: return "待办内容，加个日期：下周二 交房租"
-        case .addToDay: return "记到哪天：下周二 交房租（不写日期就是今天）"
-        case .addProject: return "项目名字"
-        case .commands: return "搜索命令、白板、待办…"
+        case .recentBoards: return String(localized: "筛选最近去过的白板…")
+        case .allTodos: return String(localized: "筛选待办…")
+        case .addTodo: return String(localized: "待办内容，加个日期：下周二 交房租")
+        case .addToDay: return String(localized: "记到哪天：下周二 交房租（不写日期就是今天）")
+        case .addProject: return String(localized: "项目名字")
+        case .commands: return String(localized: "搜索命令、白板、待办…")
         }
     }
 
@@ -491,9 +493,9 @@ struct CommandPanelView: View {
 
     private var emptyText: String {
         switch state.panelMode {
-        case .commands: return "没有匹配的结果"
-        case .recentBoards: return state.recentBoards.isEmpty ? "还没有足迹：切换白板时会记下来" : "没有匹配的白板"
-        case .allTodos: return state.todos.isEmpty ? "没有待办：正文第一行写 @todo 的文字卡会出现在这里" : "没有匹配的待办"
+        case .commands: return String(localized: "没有匹配的结果")
+        case .recentBoards: return state.recentBoards.isEmpty ? String(localized: "还没有足迹：切换白板时会记下来") : String(localized: "没有匹配的白板")
+        case .allTodos: return state.todos.isEmpty ? String(localized: "没有待办：正文第一行写 @todo 的文字卡会出现在这里") : String(localized: "没有匹配的待办")
         case .addTodo, .addToDay, .addProject: return ""
         }
     }
@@ -582,7 +584,7 @@ struct CommandPanelView: View {
                 KeyCap("tab")
                 Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 14).padding(.horizontal, 4)
             }
-            Text(state.panelMode == .commands ? "关闭" : "返回").font(.system(size: 12)).foregroundStyle(Theme.text2)
+            Text(state.panelMode == .commands ? String(localized: "关闭") : String(localized: "返回")).font(.system(size: 12)).foregroundStyle(Theme.text2)
             KeyCap("esc")
         }
         .padding(.horizontal, PanelMetrics.inset)

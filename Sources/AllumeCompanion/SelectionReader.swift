@@ -34,9 +34,9 @@ enum SelectionReader {
 
         var errorDescription: String? {
             switch self {
-            case .notTrusted: return "没有辅助功能权限，无法向 Allume 发送 ⌘C"
-            case .noAllume: return "Allume 没在运行"
-            case .timeout: return "Allume 在 \(Int(SelectionReader.timeout * 1000))ms 内没有写剪贴板：可能没有选中卡片，或焦点不在画布上"
+            case .notTrusted: return String(localized: "没有辅助功能权限，无法向 Allume 发送 ⌘C")
+            case .noAllume: return String(localized: "Allume 没在运行")
+            case .timeout: return String(localized: "Allume 在 \(Int(SelectionReader.timeout * 1000))ms 内没有写剪贴板：可能没有选中卡片，或焦点不在画布上")
             }
         }
     }

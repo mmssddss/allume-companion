@@ -73,9 +73,9 @@ final class CommandRunner {
             state.appendLog("exit \(r.status)")
             if AllumeSetup.isReadOnlyError(r.stderr) {
                 state.cliWrite = .readOnly
-                state.setStatus("Allume 的命令行工具是只读的：在 Allume 的设置 → CLI 里允许写入", error: true)
+                state.setStatus(String(localized: "Allume 的命令行工具是只读的：在 Allume 的设置 → CLI 里允许写入"), error: true)
             } else {
-                state.setStatus(r.stderr.split(separator: "\n").first.map(String.init) ?? "命令失败（exit \(r.status)）", error: true)
+                state.setStatus(r.stderr.split(separator: "\n").first.map(String.init) ?? String(localized: "命令失败（exit \(r.status)）"), error: true)
             }
         }
         return r
@@ -83,7 +83,7 @@ final class CommandRunner {
 
     private func guarded(_ body: () async -> Void) async {
         guard !state.isRunning else { return }
-        guard !state.selectedCardIds.isEmpty else { state.appendLog("没有选中的卡片。先按 ⌘K 读取。"); return }
+        guard !state.selectedCardIds.isEmpty else { state.appendLog(String(localized: "没有选中的卡片。先按 ⌘K 读取。")); return }
         state.isRunning = true
         state.setStatus("")
         await body()
@@ -104,11 +104,12 @@ final class CommandRunner {
     private func snapshotFrames(_ ids: [String]) async -> [String: Frame] {
         if let hit = boardModel?.lookup(ids), hit.age <= Self.snapshotMaxAge {
             lastRows = hit.rows
-            state.appendLog("位置来自白板模型（\(String(format: "%.1f", hit.age)) 秒前读取），已记录 \(hit.rows.count)/\(ids.count) 张（撤销用）")
+            let age = String(format: "%.1f", hit.age)
+            state.appendLog(String(localized: "位置来自白板模型（\(age) 秒前读取），已记录 \(hit.rows.count)/\(ids.count) 张（撤销用）"))
             return hit.rows.mapValues(\.frame)
         }
         let rows = await fetchRows(ids)
-        state.appendLog("已记录 \(rows.count)/\(ids.count) 张卡片的位置和尺寸（撤销用）")
+        state.appendLog(String(localized: "已记录 \(rows.count)/\(ids.count) 张卡片的位置和尺寸（撤销用）"))
         return rows.mapValues(\.frame)
     }
 
@@ -246,12 +247,12 @@ final class CommandRunner {
         state.requestHidePanel?()
         guard await exec(["open", id]).ok else { return }
         let again = await exec(["open", id], showStdout: false)
-        state.setStatus("已打开「\(title)」")
+        state.setStatus(String(localized: "已打开「\(title)」"))
         guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: AllumeTracker.bundleID).first else { return }
         app.activate()
         guard again.ok else { return }
         try? await Task.sleep(for: .milliseconds(150))
-        state.appendLog("⌘[ → Allume（让它重画面包屑）")
+        state.appendLog(String(localized: "⌘[ → Allume（让它重画面包屑）"))
         SelectionReader.postCommand(key: 33, to: app.processIdentifier) // kVK_ANSI_LeftBracket
     }
 
@@ -270,7 +271,7 @@ final class CommandRunner {
         var next = boardModel?.boardId
         while let id = next, above.insert(id).inserted { next = boardModel?.index.parentId(of: id) }
         guard let home = roots.first(where: { above.contains($0.id) }) ?? roots.first else {
-            state.setStatus("list-workspaces 没有返回 workspace", error: true)
+            state.setStatus(String(localized: "list-workspaces 没有返回 workspace"), error: true)
             return
         }
         await openBoard(id: home.id, title: home.title)
@@ -286,7 +287,7 @@ final class CommandRunner {
         let draft = TodoDraft.parse(raw)
         guard !draft.text.isEmpty else { return }
         guard let model = boardModel, let boardId = model.boardId else {
-            state.setStatus("还不知道当前是哪块白板，稍后再试", error: true)
+            state.setStatus(String(localized: "还不知道当前是哪块白板，稍后再试"), error: true)
             return
         }
         state.requestHidePanel?()
@@ -305,7 +306,7 @@ final class CommandRunner {
                             "--x", Self.num(max(0, x.rounded())), "--y", Self.num(max(0, y.rounded())), "--format", "json"],
                            showStdout: false)
         guard r.ok else { return }
-        state.setStatus("已在「\(model.title)」添加待办「\(draft.text)」" + (draft.due.map { "，\($0) 到期" } ?? ""))
+        state.setStatus(String(localized: "已在「\(model.title)」添加待办「\(draft.text)」") + (draft.due.map { String(localized: "，\($0) 到期") } ?? ""))
         Task { await model.refresh(reason: "after add todo") }
     }
 
@@ -330,16 +331,16 @@ final class CommandRunner {
         let before = await snapshotFrames(ids)
         let missing = ids.filter { before[$0] == nil }
         if !missing.isEmpty {
-            state.appendLog("警告：\(missing.count) 张卡片读不到位置，撤销时不会恢复它们")
+            state.appendLog(String(localized: "警告：\(missing.count) 张卡片读不到位置，撤销时不会恢复它们"))
         }
         let changed = await body(before)
         if let boardModel { Task { await boardModel.refresh(reason: "after \(label)") } }
         guard changed else { return }
-        state.setStatus("已\(label)")
-        guard !before.isEmpty else { state.appendLog("没有可撤销的记录"); return }
+        state.setStatus(String(localized: "已\(label)"))
+        guard !before.isEmpty else { state.appendLog(String(localized: "没有可撤销的记录")); return }
         undoEntry = UndoEntry(label: label,
                               commands: ids.compactMap { id in before[id].map { moveBack(id, to: $0) } })
-        state.appendLog("可撤销：\(label)")
+        state.appendLog(String(localized: "可撤销：\(label)"))
     }
 
     // MARK: - Commands
@@ -356,8 +357,8 @@ final class CommandRunner {
     func gather(layout: String, columns: Int, order: SortOrder) async {
         await guarded {
             let cols = max(1, columns)
-            var label = layout == "grid" ? "排成 \(cols) 列" : (layout == "row" ? "排成一行" : "排成一列")
-            if let o = order.label { label += "（\(o)）" }
+            var label = layout == "grid" ? String(localized: "排成 \(cols) 列") : (layout == "row" ? String(localized: "排成一行") : String(localized: "排成一列"))
+            if let o = order.label { label += String(localized: "（\(o)）") }
             await frameStep(label: label) { frames in
                 let known = state.selectedCardIds.compactMap { id in frames[id].map { (id, $0) } }
                 let originX = known.map(\.1.x).min() ?? 80
@@ -388,7 +389,7 @@ final class CommandRunner {
     func resizeAll(width: Int = 200, height: Int = 150) async {
         await guarded {
             let name = CommandCatalog.sizes.first { $0.width == width && $0.height == height }?.name
-            await frameStep(label: name.map { "统一大小：\($0)" } ?? "统一尺寸 \(width)×\(height)") { _ in
+            await frameStep(label: name.map { String(localized: "统一大小：\($0)") } ?? String(localized: "统一尺寸 \(width)×\(height)")) { _ in
                 var any = false
                 for id in state.selectedCardIds {
                     if await exec(["card-move", "--id", id, "--width", "\(width)", "--height", "\(height)"]).ok { any = true }
@@ -407,11 +408,11 @@ final class CommandRunner {
         state.isRunning = true
         defer { state.isRunning = false }
         undoEntry = nil
-        state.appendLog("撤销：\(entry.label)")
+        state.appendLog(String(localized: "撤销：\(entry.label)"))
         var failed = 0
         for cmd in entry.commands where !(await exec(cmd).ok) { failed += 1 }
         entry.after?()
-        state.setStatus(failed == 0 ? "已撤销：\(entry.label)" : "撤销 \(entry.label)：\(failed)/\(entry.commands.count) 条失败", error: failed > 0)
+        state.setStatus(failed == 0 ? String(localized: "已撤销：\(entry.label)") : String(localized: "撤销 \(entry.label)：\(failed)/\(entry.commands.count) 条失败"), error: failed > 0)
         state.appendLog(state.status)
         if let boardModel { Task { await boardModel.refresh(reason: "after undo") } }
     }

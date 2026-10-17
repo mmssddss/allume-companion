@@ -136,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.state.selectedCardIds = cards.map(\.id)
             self.state.selectionFromAllume = true
             self.state.selectionMessage = ""
-            self.state.appendLog("读取选中（迟到）：\(cards.count) 张 " + cards.map(\.id).joined(separator: ", "))
+            self.state.appendLog(String(localized: "读取选中（迟到）：\(cards.count) 张 ") + cards.map(\.id).joined(separator: ", "))
             Task { @MainActor in
                 await self.runner.describeSelection()
                 await self.boardModel.refreshOthers(containing: self.state.selectedCardIds, reason: "late selection")
@@ -319,13 +319,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let cards = try await SelectionReader.capture(pid: tracker.pid)
                 state.selectedCardIds = cards.map(\.id)
                 state.selectionFromAllume = true
-                state.selectionMessage = cards.isEmpty ? "⌘C 后剪贴板里没有 Allume 卡片" : ""
+                state.selectionMessage = cards.isEmpty ? String(localized: "⌘C 后剪贴板里没有 Allume 卡片") : ""
                 Log.info("selection: \(cards.count) cards after \(Int(Date().timeIntervalSince(stats.t0) * 1000)) ms: \(cards.map(\.id))")
-                state.appendLog("读取选中：\(cards.count) 张 " + cards.map(\.id).joined(separator: ", "))
+                state.appendLog(String(localized: "读取选中：\(cards.count) 张 ") + cards.map(\.id).joined(separator: ", "))
             } catch {
                 state.selectedCardIds = []
                 state.selectionMessage = error.localizedDescription
-                state.appendLog("读取选中失败：\(error.localizedDescription)")
+                state.appendLog(String(localized: "读取选中失败：\(error.localizedDescription)"))
                 Log.info("selection failed after \(Int(Date().timeIntervalSince(stats.t0) * 1000)) ms: \(error.localizedDescription)")
             }
             // Which commands are listed depends on the cards' kinds (one sub-board → 打开). The
@@ -376,13 +376,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.button?.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "Allume Companion")
         let menu = NSMenu()
         menu.delegate = self
-        primaryItem = menu.addItem(withTitle: "打开面板  ⌘K", action: #selector(menuPrimary), keyEquivalent: "")
+        primaryItem = menu.addItem(withTitle: String(localized: "打开面板  ⌘K"), action: #selector(menuPrimary), keyEquivalent: "")
         // Shown only while the CLI is read-only: the panel opens, but arranging and adding fail.
-        readOnlyItem = menu.addItem(withTitle: "Allume 命令行工具是只读的，查看说明…", action: #selector(openAllumeSettings), keyEquivalent: "")
+        readOnlyItem = menu.addItem(withTitle: String(localized: "Allume 命令行工具是只读的，查看说明…"), action: #selector(openAllumeSettings), keyEquivalent: "")
         readOnlyItem.isHidden = true
-        menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: String(localized: "设置…"), action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "退出 Allume Companion", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: String(localized: "退出 Allume Companion"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
     }
 
@@ -422,10 +422,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func menuNeedsUpdate(_ menu: NSMenu) {
         refreshSetup()
         let s = state.setup
-        primaryItem.title = !s.appInstalled ? "没找到 Allume，查看安装说明…"
-            : !s.cliInstalled ? "Allume 命令行工具还没装，查看说明…"
-            : !state.allumeRunning ? "打开 Allume"
-            : "打开面板  ⌘K"
+        primaryItem.title = !s.appInstalled ? String(localized: "没找到 Allume，查看安装说明…")
+            : !s.cliInstalled ? String(localized: "Allume 命令行工具还没装，查看说明…")
+            : !state.allumeRunning ? String(localized: "打开 Allume")
+            : String(localized: "打开面板  ⌘K")
         readOnlyItem.isHidden = state.cliWrite != .readOnly
     }
 

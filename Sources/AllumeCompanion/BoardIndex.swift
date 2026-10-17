@@ -71,7 +71,7 @@ final class BoardIndex {
             var path: [String] = []
             var up = e.parentId
             while let id = up, let p = byId[id], path.count < 6 {
-                path.insert(p.title.isEmpty ? "（无标题）" : p.title, at: 0)
+                path.insert(p.title.isEmpty ? String(localized: "（无标题）") : p.title, at: 0)
                 up = p.parentId
             }
             return BoardRef(id: e.id, title: e.title, path: path.joined(separator: " › "), lastSeen: e.lastSeen)

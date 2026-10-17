@@ -156,7 +156,7 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
             let id = Self.idPrefix + t.cardId
             let content = UNMutableNotificationContent()
             content.title = t.label
-            content.body = (t.dueLabel.map { "\($0) · " } ?? "") + "白板：\(t.boardTitle)"
+            content.body = (t.dueLabel.map { "\($0) · " } ?? "") + String(localized: "白板：\(t.boardTitle)")
             content.sound = .default
             content.userInfo = ["boardId": t.boardId, "boardTitle": t.boardTitle, "cardId": t.cardId]
             if due > Date() {
@@ -180,7 +180,7 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
     /// and then silently dropped), asks for it if never asked, then delivers one now. `done`
     /// gets a line for the 设置 window saying what happened.
     func sendTest(done: @escaping @MainActor (String) -> Void = { _ in }) {
-        guard Self.available else { Log.info("reminders: test skipped, not in an .app bundle"); done("只在打包好的 .app 里能发通知"); return }
+        guard Self.available else { Log.info("reminders: test skipped, not in an .app bundle"); done(String(localized: "只在打包好的 .app 里能发通知")); return }
         Task { @MainActor in
             var permission = await Self.permission()
             if permission == .notAsked {
@@ -189,20 +189,20 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
             }
             guard permission == .allowed else {
                 Log.info("reminders: test not sent, notifications are off for this app")
-                done("通知被关掉了：在系统设置 → 通知 → Allume Companion 里打开「允许通知」")
+                done(String(localized: "通知被关掉了：在系统设置 → 通知 → Allume Companion 里打开「允许通知」"))
                 return
             }
             let content = UNMutableNotificationContent()
-            content.title = "Allume Companion 测试通知"
-            content.body = "能看到这条，到期提醒就能响。"
+            content.title = String(localized: "Allume Companion 测试通知")
+            content.body = String(localized: "能看到这条，到期提醒就能响。")
             content.sound = .default
             do {
                 try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "test-\(Date().timeIntervalSince1970)", content: content, trigger: nil))
                 Log.info("reminders: test notification handed to the system")
-                done("已发出，看屏幕右上角；没看到就检查专注模式")
+                done(String(localized: "已发出，看屏幕右上角；没看到就检查专注模式"))
             } catch {
                 Log.info("reminders: test notification failed: \(error.localizedDescription)")
-                done("发送失败：\(error.localizedDescription)")
+                done(String(localized: "发送失败：\(error.localizedDescription)"))
             }
         }
     }

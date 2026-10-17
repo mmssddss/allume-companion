@@ -20,7 +20,7 @@ struct TodoItem: Codable, Hashable, Identifiable {
         if let c = TodoIndex.context(in: body) { return String(c.prefix(60)) }
         let lines = body.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
         for l in lines.dropFirst() where !l.isEmpty { return String(l.prefix(60)) }
-        return "（无标题）"
+        return String(localized: "（无标题）")
     }
 
     /// Days from today to the due day: negative = overdue, 0 = today, nil = no date.
@@ -32,10 +32,10 @@ struct TodoItem: Codable, Hashable, Identifiable {
 
     var dueLabel: String? {
         guard let d = daysLeft() else { return nil }
-        if d < 0 { return "已过期 \(-d) 天" }
-        if d == 0 { return "今天" }
-        if d == 1 { return "明天" }
-        return "\(d) 天后"
+        if d < 0 { return String(localized: "已过期 \(-d) 天") }
+        if d == 0 { return String(localized: "今天") }
+        if d == 1 { return String(localized: "明天") }
+        return String(localized: "\(d) 天后")
     }
 }
 

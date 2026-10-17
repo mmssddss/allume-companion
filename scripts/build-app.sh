@@ -16,6 +16,15 @@ cp "$BIN" "$APP/Contents/MacOS/AllumeCompanion"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 echo -n 'APPL????' > "$APP/Contents/PkgInfo"
 
+# UI strings: Resources/Localizable.xcstrings (source language zh-Hans, keys are the Chinese text in
+# the code) compiled into en.lproj / zh-Hans.lproj in the main bundle, where String(localized:) and
+# SwiftUI's Text("…") look by default. SwiftPM's command-line build only copies an .xcstrings raw.
+xcrun xcstringstool compile Resources/Localizable.xcstrings --output-directory "$APP/Contents/Resources"
+for f in en.lproj/Localizable.strings zh-Hans.lproj/Localizable.strings zh-Hans.lproj/Localizable.stringsdict; do
+  # A language missing a table falls through to the development region's (English) one.
+  [[ -f "$APP/Contents/Resources/$f" ]] || { echo "xcstringstool produced no $f" >&2; exit 1; }
+done
+
 # App icon: Resources/AppIcon.icon is an Icon Composer document (layers in Assets/*.svg, drawn by
 # scripts/make-icon-assets.py). actool turns it into Assets.car (the Liquid Glass icon macOS 26+
 # renders) plus AppIcon.icns for older systems; Info.plist already names both as "AppIcon".

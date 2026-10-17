@@ -118,6 +118,22 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   测：`ALLUME_USR2="今天"`（`昨天` `明天` `本月` 同理）/ `"project:名字"` / `"完成"`（配 `ALLUME_SELECT_IDS`）+ `kill -USR2`，撤销 `kill -INFO`；
   `ALLUME_PANEL_MODE=project` 出新建项目输入框；设置页 `ALLUME_SETTINGS_TAB=companion`。删掉 companion.json 不会重复建
   （会按标题在父白板上认回来），但 `filledMonths` 丢了会把每个月重读一遍。
+- 界面语言（README "构建与运行"）：中英两套，跟随系统语言，不加别的语言。代码里的中文原文就是键：`String(localized: "…")`，
+  以及 SwiftUI `Text("…")` / `Button("…")` 的字面量（`LocalizedStringKey`，默认查 main bundle）；把 `String` 变量交给 `Text`
+  不会翻译，所以 Settings 的 `checkbox` / `labeled` / `note` / `statusRow` 参数是 `LocalizedStringKey`，运行时拼好的字用 `note(verbatim:)`。
+  表在 `Resources/Localizable.xcstrings`（sourceLanguage zh-Hans），build-app.sh 用 `xcrun xcstringstool compile` 编进
+  `Contents/Resources/{en,zh-Hans}.lproj`。不走 SwiftPM resources / `Bundle.module`：`swift build` 只把 .xcstrings 原样拷进 bundle、
+  不编译（实测），而且 SwiftUI 字面量默认查 main bundle。zh-Hans 也必须有 `.strings` 和 `.stringsdict` 两张表：某语言缺一张时
+  查找落到开发区域（Info.plist `CFBundleDevelopmentRegion` = en）那张，中文界面会冒英文（实测：复数串变成 "1 cards"）。所以
+  复数键在目录里带一个 zh-Hans 的 plural `other`（就是原文），`section.*` 键带 zh-Hans 值；build-app.sh 缺表就失败。
+  改了界面文字跑 `scripts/sync-strings.sh`：带 `-emit-localized-strings` 编译抽出所有键 → `xcstringstool sync`，列出还没英文的键
+  和代码里不再有的（stale，可删）；英文直接改 JSON 或用 Xcode 打开 .xcstrings，英文复数用 plural variations（one / other）。
+  同一个中文词要两种英文时用独立键 `String(localized: "section.commands", defaultValue: "命令")`（分组标题 Commands，行尾标签 Command）。
+  星期标签 `DateWords.weekdayLabel` 是运行时键（周一…周日，目录里 manual），只用于显示；写进 Allume 的东西不翻译：日 / 月白板标题、
+  `@todo(due: …)`、月白板的「一 … 日」表头卡（`CompanionLayout.weekdayNames`）、`DateWords` 规则表（解析用）。`Log.info` 和测试钩子不翻译。
+  英文日期输入靠 `NSDataDetector`：`tomorrow` `Friday` `in 3 days` `Oct 20` `10-20` 能认，`next week` `end of month` 不认，
+  `next tuesday` 算成下下周二（所以提示文案不用它）。测英文：`open -n build/AllumeCompanion.app --args -AppleLanguages '(en)'`，
+  配上面的 `ALLUME_SNAPSHOT` / `ALLUME_SETTINGS_SNAPSHOT`；本机已经开着一份时 `-n` 另起一个，测完按 pid 杀掉自己那个。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。
 - 图标：`Resources/AppIcon.icon`（Icon Composer 格式）由 build-app.sh 里的 `xcrun actool … --app-icon AppIcon` 编成
   Assets.car + AppIcon.icns。`icon.json` 的 `groups` **第一个在最上层**（和 Icon Composer 界面一致）。想看系统真正渲染的

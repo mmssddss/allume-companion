@@ -112,12 +112,12 @@ enum SettingsTab: String, CaseIterable {
 
     var title: String {
         switch self {
-        case .general: return "通用"
+        case .general: return String(localized: "通用")
         case .allume: return "Allume"
-        case .reminders: return "提醒"
-        case .companion: return "日记与项目"
-        case .data: return "数据"
-        case .about: return "关于"
+        case .reminders: return String(localized: "提醒")
+        case .companion: return String(localized: "日记与项目")
+        case .data: return String(localized: "数据")
+        case .about: return String(localized: "关于")
         }
     }
 
@@ -265,7 +265,7 @@ struct SettingsPage: View {
         Divider()
         Text("权限").font(.headline)
         statusRow("辅助功能", ok: model.axTrusted,
-                  status: model.axTrusted ? "已允许" : "未允许，读不到选中的卡片") {
+                  status: model.axTrusted ? String(localized: "已允许") : String(localized: "未允许，读不到选中的卡片")) {
             if !model.axTrusted {
                 Button("打开设置…") {
                     if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
@@ -286,13 +286,13 @@ struct SettingsPage: View {
 
     @ViewBuilder private var allume: some View {
         statusRow("Allume", ok: model.setup.appInstalled,
-                  status: model.setup.appURL.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "没找到") {
+                  status: model.setup.appURL.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? String(localized: "没找到")) {
             if !model.setup.appInstalled { Link("前往 allume.com", destination: AllumeSetup.website) }
         }
-        statusRow("正在运行", ok: model.allumeRunning, status: model.allumeRunning ? "是" : "没在运行") {
+        statusRow("正在运行", ok: model.allumeRunning, status: model.allumeRunning ? String(localized: "是") : String(localized: "没在运行")) {
             if model.setup.appInstalled && !model.allumeRunning { openAllumeButton }
         }
-        statusRow("命令行工具", ok: model.setup.cliInstalled, status: model.setup.cliInstalled ? AllumeCLI.path : "没装") {
+        statusRow("命令行工具", ok: model.setup.cliInstalled, status: model.setup.cliInstalled ? AllumeCLI.path : String(localized: "没装")) {
             if model.setup.appInstalled && !model.setup.cliInstalled && model.allumeRunning { openAllumeButton }
         }
         statusRow("写入权限", ok: model.cliWrite == .writable, status: writeStatus) {
@@ -356,19 +356,18 @@ struct SettingsPage: View {
         }
         note("Todo / Doing / Done 里的项目按网格排，最新的在左上；下次新建或移动项目时按新的列数重排。")
         Divider()
-        note("都在 workspace 根白板上的「\(CompanionLayout.rootTitle)」里：Daily Notes 按 年 › 月 › 日 嵌套，"
-             + "Projects 下分 Todo / Doing / Done。只有这三块白板里 project- 开头的白板能改状态，别处的白板一概不碰。")
+        note("都在 workspace 根白板上的「\(CompanionLayout.rootTitle)」里：Daily Notes 按 年 › 月 › 日 嵌套，Projects 下分 Todo / Doing / Done。只有这三块白板里 project- 开头的白板能改状态，别处的白板一概不碰。")
     }
 
     @ViewBuilder private var data: some View {
         labeled("待办：") {
-            Text("\(model.todoCount) 条" + (model.overdueCount > 0 ? "，\(model.overdueCount) 条到期" : ""))
-            Button(model.scanning ? "扫描中…" : "重新扫描") { model.rescanTodos() }.disabled(model.scanning)
+            Text(String(localized: "\(model.todoCount) 条") + (model.overdueCount > 0 ? String(localized: "，\(model.overdueCount) 条到期") : ""))
+            Button(model.scanning ? String(localized: "扫描中…") : String(localized: "重新扫描")) { model.rescanTodos() }.disabled(model.scanning)
         }
-        note(scanText + "，共 \(model.boardCount) 块白板。")
+        note(verbatim: scanText + String(localized: "，共 \(model.boardCount) 块白板。"))
         Divider()
         labeled("缩略图：") {
-            Button(model.thumbnailsCleared ? "已清空" : "清空缓存") {
+            Button(model.thumbnailsCleared ? String(localized: "已清空") : String(localized: "清空缓存")) {
                 model.clearThumbnails()
                 model.thumbnailsCleared = true
             }
@@ -398,7 +397,7 @@ struct SettingsPage: View {
     // MARK: - Pieces
 
     /// A checkbox with a grey line of explanation under it, like Allume's 会员 tab.
-    private func checkbox(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
+    private func checkbox(_ title: LocalizedStringKey, detail: LocalizedStringKey, isOn: Binding<Bool>) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Toggle(title, isOn: isOn).toggleStyle(.checkbox)
             Text(detail).font(.callout).foregroundStyle(.secondary).padding(.leading, 22)
@@ -406,18 +405,23 @@ struct SettingsPage: View {
     }
 
     /// "名字：" then controls, like Allume's "邮箱： … [登出]".
-    private func labeled(_ label: String, @ViewBuilder content: () -> some View) -> some View {
+    private func labeled(_ label: LocalizedStringKey, @ViewBuilder content: () -> some View) -> some View {
         HStack(spacing: 10) {
             Text(label)
             content()
         }
     }
 
-    private func note(_ text: String) -> some View {
+    private func note(_ text: LocalizedStringKey) -> some View {
         Text(text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 
-    private func statusRow(_ name: String, ok: Bool, status: String, @ViewBuilder action: () -> some View) -> some View {
+    /// A note built at run time (already localized).
+    private func note(verbatim text: String) -> some View {
+        Text(verbatim: text).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func statusRow(_ name: LocalizedStringKey, ok: Bool, status: String, @ViewBuilder action: () -> some View) -> some View {
         HStack(spacing: 8) {
             Image(systemName: ok ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                 .foregroundStyle(ok ? Color.green : Color.orange)
@@ -439,43 +443,44 @@ struct SettingsPage: View {
 
     private var writeStatus: String {
         switch model.cliWrite {
-        case .writable: return "可写"
-        case .readOnly: return "只读，排列、改大小、添加待办都会失败"
+        case .writable: return String(localized: "可写")
+        case .readOnly: return String(localized: "只读，排列、改大小、添加待办都会失败")
         case .unknown:
-            if !model.setup.cliInstalled { return "装好命令行工具后检查" }
-            return model.allumeRunning ? "检查中…" : "打开 Allume 后检查"
+            if !model.setup.cliInstalled { return String(localized: "装好命令行工具后检查") }
+            return model.allumeRunning ? String(localized: "检查中…") : String(localized: "打开 Allume 后检查")
         }
     }
 
     /// The next thing to do, in order: install Allume, run it, install the CLI, make it writable.
     private var setupHint: String {
-        if !model.setup.appInstalled { return "第 1 步：Companion 的所有操作都经过 Allume 和它的命令行工具，先装 Allume（allume.com 或 Setapp）。" }
-        if !model.allumeRunning { return "第 2 步：打开 Allume。命令行工具要连着运行中的 Allume 才能用。" }
-        if !model.setup.cliInstalled { return "第 3 步：在 Allume 的设置 → CLI 里安装命令行工具，装好后这里会自动变绿。" }
-        if model.cliWrite == .readOnly { return "第 4 步：在 Allume 的设置 → CLI 里允许写入（read-write），再点「重新检查」。" }
-        if model.cliWrite == .unknown { return "正在问命令行工具能不能写入…" }
-        return "都准备好了。在 Allume 里按 ⌘K 打开面板。"
+        if !model.setup.appInstalled { return String(localized: "第 1 步：Companion 的所有操作都经过 Allume 和它的命令行工具，先装 Allume（allume.com 或 Setapp）。") }
+        if !model.allumeRunning { return String(localized: "第 2 步：打开 Allume。命令行工具要连着运行中的 Allume 才能用。") }
+        if !model.setup.cliInstalled { return String(localized: "第 3 步：在 Allume 的设置 → CLI 里安装命令行工具，装好后这里会自动变绿。") }
+        if model.cliWrite == .readOnly { return String(localized: "第 4 步：在 Allume 的设置 → CLI 里允许写入（read-write），再点「重新检查」。") }
+        if model.cliWrite == .unknown { return String(localized: "正在问命令行工具能不能写入…") }
+        return String(localized: "都准备好了。在 Allume 里按 ⌘K 打开面板。")
     }
 
     private var notificationStatus: String {
         switch model.notifications {
-        case .allowed: return "已允许"
-        case .denied: return "已关闭，到期不会提醒"
-        case .notAsked: return "还没问过"
-        case .unavailable: return "只在 .app 里可用"
+        case .allowed: return String(localized: "已允许")
+        case .denied: return String(localized: "已关闭，到期不会提醒")
+        case .notAsked: return String(localized: "还没问过")
+        case .unavailable: return String(localized: "只在 .app 里可用")
         }
     }
 
     private var scanText: String {
-        if model.scanning { return "正在扫描所有白板" }
-        guard let t = model.scannedAt else { return "还没扫描过" }
-        return "上次扫描 " + t.formatted(date: .omitted, time: .shortened) + "，每 15 分钟自动扫一次"
+        if model.scanning { return String(localized: "正在扫描所有白板") }
+        guard let t = model.scannedAt else { return String(localized: "还没扫描过") }
+        let time = t.formatted(date: .omitted, time: .shortened)
+        return String(localized: "上次扫描 \(time)，每 15 分钟自动扫一次")
     }
 
     private var version: String {
         let info = Bundle.main.infoDictionary
-        let v = info?["CFBundleShortVersionString"] as? String ?? "开发版"
+        let v = info?["CFBundleShortVersionString"] as? String ?? String(localized: "开发版")
         let b = info?["CFBundleVersion"] as? String
-        return "版本 \(v)" + (b.map { " (\($0))" } ?? "")
+        return String(localized: "版本 \(v)") + (b.map { " (\($0))" } ?? "")
     }
 }

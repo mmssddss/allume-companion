@@ -26,21 +26,27 @@ enum DateWords {
 
     nonisolated static let weekdayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 
-    /// "周二 · 3 天后": what a date means, for the suggestion rows.
+    /// "周二 · 3 天后" ("Tue · in 3 days"): what a date means, for the suggestion rows.
     nonisolated static func describe(_ date: Date, today: Date = Date()) -> String {
         let cal = calendar
         let start = cal.startOfDay(for: today)
-        let wd = weekdayNames[(cal.component(.weekday, from: date) + 5) % 7]
+        let wd = weekdayLabel(weekdayNames[(cal.component(.weekday, from: date) + 5) % 7])
         let days = cal.dateComponents([.day], from: start, to: cal.startOfDay(for: date)).day ?? 0
         let rel: String
         switch days {
-        case 0: rel = "今天"
-        case 1: rel = "明天"
-        case 2: rel = "后天"
-        case let d where d < 0: rel = "已过 \(-d) 天"
-        default: rel = "\(days) 天后"
+        case 0: rel = String(localized: "今天")
+        case 1: rel = String(localized: "明天")
+        case 2: rel = String(localized: "后天")
+        case let d where d < 0: rel = String(localized: "已过 \(-d) 天")
+        default: rel = String(localized: "\(days) 天后")
         }
         return "\(wd) · \(rel)"
+    }
+
+    /// One of `weekdayNames` in the UI language ("周二" → "Tue"). Labels only: the names themselves
+    /// are parsed vocabulary and the month boards' header text.
+    nonisolated static func weekdayLabel(_ name: String) -> String {
+        String(localized: String.LocalizationValue(name))
     }
 
     // MARK: - Vocabulary

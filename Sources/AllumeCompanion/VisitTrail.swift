@@ -57,10 +57,13 @@ final class VisitTrail {
 /// "3 分钟前" style relative time for the panel rows.
 func relativeTime(_ date: Date, now: Date = Date()) -> String {
     let s = Int(now.timeIntervalSince(date))
-    if s < 60 { return "刚刚" }
-    if s < 3600 { return "\(s / 60) 分钟前" }
-    if s < 86400 { return "\(s / 3600) 小时前" }
-    if s < 86400 * 7 { return "\(s / 86400) 天前" }
-    let f = DateFormatter(); f.dateFormat = "M月d日"
+    if s < 60 { return String(localized: "刚刚") }
+    if s < 3600 { return String(localized: "\(s / 60) 分钟前") }
+    if s < 86400 { return String(localized: "\(s / 3600) 小时前") }
+    if s < 86400 * 7 { return String(localized: "\(s / 86400) 天前") }
+    // "M月d日" in Chinese, "Oct 3" in English: in the language the rest of the UI is in.
+    let f = DateFormatter()
+    f.locale = Locale(identifier: Bundle.main.preferredLocalizations.first ?? "en")
+    f.setLocalizedDateFormatFromTemplate("MMMd")
     return f.string(from: date)
 }

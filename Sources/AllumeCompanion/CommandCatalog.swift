@@ -11,11 +11,11 @@ struct SortOrder: Equatable {
     var label: String? {
         switch (key, reversed) {
         case (.visual, false): return nil
-        case (.visual, true): return "逆序"
-        case (.title, false): return "按标题"
-        case (.title, true): return "按标题逆序"
-        case (.created, false): return "按时间"
-        case (.created, true): return "按时间逆序"
+        case (.visual, true): return String(localized: "逆序")
+        case (.title, false): return String(localized: "按标题")
+        case (.title, true): return String(localized: "按标题逆序")
+        case (.created, false): return String(localized: "按时间")
+        case (.created, true): return String(localized: "按时间逆序")
         }
     }
 }
@@ -52,13 +52,13 @@ enum CommandGroup: Int, CaseIterable {
 
     var title: String {
         switch self {
-        case .board: return "这块白板"
-        case .project: return "项目"
-        case .arrange: return "排列"
-        case .size: return "大小"
-        case .navigate: return "导航"
-        case .create: return "新建"
-        case .edit: return "编辑"
+        case .board: return String(localized: "这块白板")
+        case .project: return String(localized: "项目")
+        case .arrange: return String(localized: "排列")
+        case .size: return String(localized: "大小")
+        case .navigate: return String(localized: "导航")
+        case .create: return String(localized: "新建")
+        case .edit: return String(localized: "编辑")
         }
     }
 }
@@ -117,7 +117,7 @@ enum CommandCatalog {
     static let defaultColumns = 3
     /// Three fixed card sizes (4:3, Allume's default card is 200×150 = 中). No free-form sizes.
     static let sizes: [(name: String, width: Int, height: Int)] = [
-        ("小", 160, 120), ("中", 200, 150), ("大", 280, 210),
+        (String(localized: "小"), 160, 120), (String(localized: "中"), 200, 150), (String(localized: "大"), 280, 210),
     ]
 
     /// Catalog order is the tie-break when typing. With an empty field the panel lists the
@@ -126,134 +126,134 @@ enum CommandCatalog {
     /// selected their commands come first. Hints of the navigation rows are filled in live by
     /// the panel (last board, number of todos).
     static let specs: [CommandSpec] = [
-        CommandSpec(id: "recent", title: "最近去过", hint: "回到之前看过的白板",
+        CommandSpec(id: "recent", title: String(localized: "最近去过"), hint: String(localized: "回到之前看过的白板"),
                     symbol: "clock.arrow.circlepath",
                     aliases: ["最近", "去过", "足迹", "回去", "历史", "刚才", "recent", "back", "history", "visited", "zuijin", "zuji"],
                     group: .navigate, needs: .nothing,
                     build: { _ in .recentBoards },
-                    display: { _ in "最近去过" }),
-        CommandSpec(id: "todos", title: "全部待办", hint: "所有 @todo 卡",
+                    display: { _ in String(localized: "最近去过") }),
+        CommandSpec(id: "todos", title: String(localized: "全部待办"), hint: String(localized: "所有 @todo 卡"),
                     symbol: "checklist",
                     aliases: ["待办", "todo", "todos", "任务", "到期", "截止", "过期", "@todo", "tasks", "due", "daiban", "renwu"],
                     group: .navigate, needs: .nothing,
                     build: { _ in .allTodos },
-                    display: { _ in "全部待办" }),
-        CommandSpec(id: "home", title: "回首页", hint: "当前 workspace 的顶层白板",
+                    display: { _ in String(localized: "全部待办") }),
+        CommandSpec(id: "home", title: String(localized: "回首页"), hint: String(localized: "当前 workspace 的顶层白板"),
                     symbol: "house",
                     aliases: ["回首页", "首页", "主页", "顶层", "根", "home", "root", "top", "shouye", "zhuye"],
                     group: .navigate, needs: .nothing,
                     build: { _ in .home },
-                    display: { _ in "回首页" }),
-        CommandSpec(id: "today", title: "今天", hint: "今天的 daily note",
+                    display: { _ in String(localized: "回首页") }),
+        CommandSpec(id: "today", title: String(localized: "今天"), hint: String(localized: "今天的 daily note"),
                     symbol: "calendar",
                     aliases: ["今天", "今日", "日记", "每日", "daily", "today", "journal", "jintian", "jinri", "riji"],
                     group: .navigate, needs: .nothing,
                     build: { _ in .day(offset: 0) },
-                    display: { _ in "今天" }),
-        CommandSpec(id: "yesterday", title: "昨天", hint: "昨天的 daily note",
+                    display: { _ in String(localized: "今天") }),
+        CommandSpec(id: "yesterday", title: String(localized: "昨天"), hint: String(localized: "昨天的 daily note"),
                     symbol: "chevron.left.circle",
                     aliases: ["昨天", "昨日", "yesterday", "prev", "previous", "zuotian", "zuori"],
                     group: .navigate, needs: .nothing,
                     build: { _ in .day(offset: -1) },
-                    display: { _ in "昨天" }),
-        CommandSpec(id: "tomorrow", title: "明天", hint: "明天的 daily note",
+                    display: { _ in String(localized: "昨天") }),
+        CommandSpec(id: "tomorrow", title: String(localized: "明天"), hint: String(localized: "明天的 daily note"),
                     symbol: "chevron.right.circle",
                     aliases: ["明天", "明日", "tomorrow", "next", "mingtian", "mingri"],
                     group: .navigate, needs: .nothing,
                     build: { _ in .day(offset: 1) },
-                    display: { _ in "明天" }),
-        CommandSpec(id: "this-month", title: "本月", hint: "这个月的日历白板",
+                    display: { _ in String(localized: "明天") }),
+        CommandSpec(id: "this-month", title: String(localized: "本月"), hint: String(localized: "这个月的日历白板"),
                     symbol: "calendar.badge.clock",
                     aliases: ["本月", "这个月", "当月", "月历", "日历", "month", "thismonth", "calendar", "benyue", "dangyue", "yueli", "rili"],
                     group: .navigate, needs: .nothing,
                     build: { _ in .thisMonth },
-                    display: { _ in "本月" }),
-        CommandSpec(id: "add-todo", title: "添加待办", hint: "在眼前贴一张 @todo 卡",
+                    display: { _ in String(localized: "本月") }),
+        CommandSpec(id: "add-todo", title: String(localized: "添加待办"), hint: String(localized: "在眼前贴一张 @todo 卡"),
                     symbol: "plus.circle",
                     aliases: ["添加待办", "加待办", "新待办", "新建待办", "记待办", "添加", "新建", "便签", "贴",
                               "add", "new", "addtodo", "note", "tianjia", "jiadaiban", "xinjian"],
                     group: .create, needs: .nothing,
                     build: { _ in .addTodo },
-                    display: { _ in "添加待办" }),
-        CommandSpec(id: "add-to-day", title: "记到某天", hint: "贴到那天的 daily note",
+                    display: { _ in String(localized: "添加待办") }),
+        CommandSpec(id: "add-to-day", title: String(localized: "记到某天"), hint: String(localized: "贴到那天的 daily note"),
                     symbol: "calendar.badge.plus",
                     aliases: ["记到某天", "记到那天", "记到日记", "贴到日记", "加到日记", "日记待办", "安排", "排到",
                               "schedule", "plan", "addday", "jidao", "anpai", "riji"],
                     group: .create, needs: .nothing,
                     build: { _ in .addToDay },
-                    display: { _ in "记到某天" }),
-        CommandSpec(id: "add-project", title: "新建项目", hint: "建一块 project- 白板",
+                    display: { _ in String(localized: "记到某天") }),
+        CommandSpec(id: "add-project", title: String(localized: "新建项目"), hint: String(localized: "建一块 project- 白板"),
                     symbol: "folder.badge.plus",
                     aliases: ["新建项目", "新项目", "项目", "建项目", "project", "newproject", "xiangmu", "xinxiangmu"],
                     group: .create, needs: .nothing,
                     build: { _ in .addProject },
-                    display: { _ in "新建项目" }),
-        CommandSpec(id: "project-done", title: "完成", hint: "移到 Done",
+                    display: { _ in String(localized: "新建项目") }),
+        CommandSpec(id: "project-done", title: String(localized: "完成"), hint: String(localized: "移到 Done"),
                     symbol: "checkmark.seal",
                     aliases: ["完成", "做完", "搞定", "结束", "done", "finish", "complete", "wancheng", "zuowan"],
                     group: .project, needs: .project(.done),
                     build: { _ in .moveProjects(.done) },
-                    display: { _ in "完成" }),
-        CommandSpec(id: "project-doing", title: "移到 Doing", hint: "开始做",
+                    display: { _ in String(localized: "完成") }),
+        CommandSpec(id: "project-doing", title: String(localized: "移到 Doing"), hint: String(localized: "开始做"),
                     symbol: "play.circle",
                     aliases: ["开始", "进行", "进行中", "在做", "doing", "start", "kaishi", "jinxing"],
                     group: .project, needs: .project(.doing),
                     build: { _ in .moveProjects(.doing) },
-                    display: { _ in "移到 Doing" }),
-        CommandSpec(id: "project-todo", title: "移到 Todo", hint: "放回待做",
+                    display: { _ in String(localized: "移到 Doing") }),
+        CommandSpec(id: "project-todo", title: String(localized: "移到 Todo"), hint: String(localized: "放回待做"),
                     symbol: "tray",
                     aliases: ["放回", "待做", "搁置", "以后", "todo", "backlog", "later", "fanghui"],
                     group: .project, needs: .project(.todo),
                     build: { _ in .moveProjects(.todo) },
-                    display: { _ in "移到 Todo" }),
-        CommandSpec(id: "open-board", title: "打开白板", hint: "进入这块白板",
+                    display: { _ in String(localized: "移到 Todo") }),
+        CommandSpec(id: "open-board", title: String(localized: "打开白板"), hint: String(localized: "进入这块白板"),
                     symbol: "arrow.right.square",
                     aliases: ["打开", "进入", "进去", "跳转", "open", "enter", "go", "dakai", "jinru"],
                     group: .board, needs: .oneBoard,
                     build: { _ in .openSelectedBoard },
-                    display: { _ in "打开白板" }),
-        CommandSpec(id: "grid", title: "排成 N 列", hint: "网格，可加列数：grid 4",
+                    display: { _ in String(localized: "打开白板") }),
+        CommandSpec(id: "grid", title: String(localized: "排成 N 列"), hint: String(localized: "网格，可加列数：grid 4"),
                     symbol: "square.grid.3x3",
                     aliases: ["排成", "排列", "整理", "网格", "列", "grid", "arrange", "columns", "sort", "tidy", "pailie", "wangge", "zhengli"],
                     group: .arrange, needs: .cards(2),
                     build: { .gather(layout: "grid", columns: $0.number ?? defaultColumns, order: $0.order) },
-                    display: { "排成 \($0.number ?? defaultColumns) 列" + orderSuffix($0) }),
-        CommandSpec(id: "row", title: "排成一行", hint: "横向",
+                    display: { String(localized: "排成 \($0.number ?? defaultColumns) 列") + orderSuffix($0) }),
+        CommandSpec(id: "row", title: String(localized: "排成一行"), hint: String(localized: "横向"),
                     symbol: "rectangle.split.3x1",
                     aliases: ["一行", "横排", "横向", "行", "row", "horizontal", "yihang", "hengpai"],
                     group: .arrange, needs: .cards(2),
                     build: { .gather(layout: "row", columns: 0, order: $0.order) },
-                    display: { "排成一行" + orderSuffix($0) }),
-        CommandSpec(id: "column", title: "排成一列", hint: "纵向",
+                    display: { String(localized: "排成一行") + orderSuffix($0) }),
+        CommandSpec(id: "column", title: String(localized: "排成一列"), hint: String(localized: "纵向"),
                     symbol: "rectangle.split.1x2",
                     aliases: ["一列", "竖排", "纵向", "column", "vertical", "stack", "yilie", "shupai"],
                     group: .arrange, needs: .cards(2),
                     build: { .gather(layout: "column", columns: 0, order: $0.order) },
-                    display: { "排成一列" + orderSuffix($0) }),
-        CommandSpec(id: "size-medium", title: "统一大小：中", hint: "200×150，Allume 默认",
+                    display: { String(localized: "排成一列") + orderSuffix($0) }),
+        CommandSpec(id: "size-medium", title: String(localized: "统一大小：中"), hint: String(localized: "200×150，Allume 默认"),
                     symbol: "square.resize",
                     aliases: ["统一", "大小", "尺寸", "中", "中等", "一样大", "同样大", "size", "same", "medium", "normal", "tongyi", "daxiao", "zhong"],
                     group: .size, needs: .cards(1),
                     build: { _ in .resize(width: sizes[1].width, height: sizes[1].height) },
-                    display: { _ in "统一大小：中" }),
-        CommandSpec(id: "size-small", title: "统一大小：小", hint: "160×120",
+                    display: { _ in String(localized: "统一大小：中") }),
+        CommandSpec(id: "size-small", title: String(localized: "统一大小：小"), hint: String(localized: "160×120"),
                     symbol: "arrow.down.right.and.arrow.up.left",
                     aliases: ["小", "缩小", "减小", "变小", "small", "smaller", "shrink", "xiao", "suoxiao"],
                     group: .size, needs: .cards(1),
                     build: { _ in .resize(width: sizes[0].width, height: sizes[0].height) },
-                    display: { _ in "统一大小：小" }),
-        CommandSpec(id: "size-large", title: "统一大小：大", hint: "280×210",
+                    display: { _ in String(localized: "统一大小：小") }),
+        CommandSpec(id: "size-large", title: String(localized: "统一大小：大"), hint: String(localized: "280×210"),
                     symbol: "arrow.up.left.and.arrow.down.right",
                     aliases: ["大", "放大", "变大", "增大", "large", "big", "bigger", "enlarge", "da", "fangda"],
                     group: .size, needs: .cards(1),
                     build: { _ in .resize(width: sizes[2].width, height: sizes[2].height) },
-                    display: { _ in "统一大小：大" }),
-        CommandSpec(id: "undo", title: "撤销", hint: "撤销上一步",
+                    display: { _ in String(localized: "统一大小：大") }),
+        CommandSpec(id: "undo", title: String(localized: "撤销"), hint: String(localized: "撤销上一步"),
                     symbol: "arrow.uturn.backward",
                     aliases: ["撤销", "撤回", "回退", "还原", "undo", "revert", "back", "chexiao", "huitui"],
                     group: .edit, needs: .undoStep,
                     build: { _ in .undo },
-                    display: { _ in "撤销" }),
+                    display: { _ in String(localized: "撤销") }),
     ]
 
     static func isAvailable(_ spec: CommandSpec, in context: SelectionContext) -> Bool {
@@ -281,7 +281,7 @@ enum CommandCatalog {
     }
 
     static func orderSuffix(_ args: ParsedArgs) -> String {
-        args.order.label.map { "（\($0)）" } ?? ""
+        args.order.label.map { String(localized: "（\($0)）") } ?? ""
     }
 
     /// Modifier words that set the sort order instead of picking a command. "按标题" and

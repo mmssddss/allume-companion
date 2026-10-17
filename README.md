@@ -1,5 +1,7 @@
 # Allume Companion
 
+[English](README.en.md) | 中文
+
 Allume（原 Muse）白板的伴生命令面板：在 Allume 里按 **⌘K**，它读取当前选中的卡片，从 Allume 窗口顶部弹出面板，
 对这些卡片批量执行 `allume` CLI 命令；Esc、再按一次 ⌘K、点回 Allume 或切走 Allume 都会收起。平时不显示任何东西。所有对 Allume 的操作都走
 `/usr/local/bin/allume`，不截屏、不模拟点击；模拟的按键只有发给 Allume 的 ⌘C（读选中）和跳白板后的一次 ⌘[（刷新面包屑）。
@@ -31,6 +33,9 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
   不需要屏幕录制权限）；
   用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志
   （每个节点的角色、标题/正文、屏幕坐标、焦点/选中态、非标准属性名，以及当前的 `AXFocusedUIElement`）。
+- 界面语言：中文和英文两套，跟随系统语言（其他语言的系统显示英文）。字符串表是 `Resources/Localizable.xcstrings`
+  （键就是代码里的中文原文，英文是译文），build-app.sh 用 `xcstringstool` 编进 .app；改了界面文字跑 `scripts/sync-strings.sh`
+  同步键并补英文。测英文：`open -n build/AllumeCompanion.app --args -AppleLanguages '(en)'`。
 - 它是菜单栏常驻 app（无 Dock 图标）。菜单栏图标里只有三项：打开面板 ⌘K、设置… ⌘,、退出。
   "最近去过""全部待办""回首页""今天""昨天""明天""本月""添加待办""新建项目"都在面板里。
 

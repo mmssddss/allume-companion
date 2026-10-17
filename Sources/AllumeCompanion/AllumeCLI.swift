@@ -68,7 +68,7 @@ enum AllumeCLI {
 
     static func runSync(_ args: [String], raw: Bool = false) -> Result {
         guard FileManager.default.isExecutableFile(atPath: executable) else {
-            return Result(status: -1, stdout: "", stdoutData: Data(), stderr: "找不到 \(path)（在 Allume 的设置 → CLI 里安装）")
+            return Result(status: -1, stdout: "", stdoutData: Data(), stderr: String(localized: "找不到 \(path)（在 Allume 的设置 → CLI 里安装）"))
         }
         let tmp = FileManager.default.temporaryDirectory
         let out = tmp.appendingPathComponent("allume-\(UUID().uuidString).out")
@@ -84,7 +84,7 @@ enum AllumeCLI {
         p.standardOutput = FileHandle.nullDevice
         p.standardError = openErr
         do { try p.run() } catch {
-            return Result(status: -1, stdout: "", stdoutData: Data(), stderr: "无法启动 open: \(error.localizedDescription)")
+            return Result(status: -1, stdout: "", stdoutData: Data(), stderr: String(localized: "无法启动 open: \(error.localizedDescription)"))
         }
         let openErrText = String(decoding: openErr.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         p.waitUntilExit()

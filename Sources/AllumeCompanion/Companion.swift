@@ -122,11 +122,11 @@ enum CompanionLayout {
         return (p[0], p[1], p[2])
     }
 
-    /// "周六" for a date.
+    /// "周六" ("Sat" in English) for a date: a label for the panel, never written to a board.
     static func weekdayName(year: Int, month: Int, day: Int) -> String {
         guard let date = calendar.date(from: DateComponents(year: year, month: month, day: day)) else { return "" }
         let w = calendar.component(.weekday, from: date) // 1 = Sunday
-        return "周" + weekdayNames[(w + 5) % 7]
+        return DateWords.weekdayLabel(DateWords.weekdayNames[(w + 5) % 7])
     }
 
     /// `project-<name>`; a typed prefix is not doubled. Empty when there is no name.
@@ -239,7 +239,7 @@ extension CommandRunner {
         var next = boardModel?.boardId
         while let id = next, above.insert(id).inserted { next = boardModel?.index.parentId(of: id) }
         guard let w = all.first(where: { above.contains($0.root) }) ?? all.first else {
-            state.setStatus("list-workspaces 没有返回 workspace", error: true)
+            state.setStatus(String(localized: "list-workspaces 没有返回 workspace"), error: true)
             return nil
         }
         companion.workspace = w
@@ -344,7 +344,7 @@ extension CommandRunner {
         let r = await exec(["card-add", "--parent", dayId, "--text", draft.body,
                             "--x", Self.num(x.rounded()), "--y", Self.num(y.rounded()), "--format", "json"], showStdout: false)
         guard r.ok else { return }
-        state.setStatus("已记到 \(dayTitle) \(CompanionLayout.weekdayName(year: t.year, month: t.month, day: t.day))：\(draft.text)")
+        state.setStatus(String(localized: "已记到 \(dayTitle) \(CompanionLayout.weekdayName(year: t.year, month: t.month, day: t.day))：\(draft.text)"))
         // Read the day back so the todo list and reminders have it now, and so the todo scan
         // stops skipping the board as empty before the next crawl.
         if let after = await rows(of: dayId, background: true) {
@@ -365,7 +365,7 @@ extension CommandRunner {
            let onMonth = await rows(of: monthId, subBoardsOnly: true), onMonth.contains(where: { $0.document?.id == dayId }) {
             return dayId
         }
-        state.appendLog("准备 daily note：\(dayTitle)")
+        state.appendLog(String(localized: "准备 daily note：\(dayTitle)"))
         let slot = CompanionLayout.daySlots(year: t.year, month: t.month, mondayFirst: CompanionSettings.weekStartsMonday)
             .first { $0.day == t.day }.map { (x: $0.x, y: $0.y) } ?? CompanionLayout.rowSlot(0)
         guard let base = await ensureBase(),
@@ -374,7 +374,7 @@ extension CommandRunner {
               let onMonth = await rows(of: monthId, subBoardsOnly: true),
               let dayId = await ensureChild(dayTitle, in: monthId, mounted: onMonth, known: companion.registry(ws).days[dayTitle],
                                             workspace: ws, slot: { slot }) else {
-            if state.status.isEmpty { state.setStatus("没能建好 \(dayTitle) 的白板，看日志", error: true) }
+            if state.status.isEmpty { state.setStatus(String(localized: "没能建好 \(dayTitle) 的白板，看日志"), error: true) }
             return nil
         }
         companion.update(ws) { $0.days[dayTitle] = dayId }
@@ -398,11 +398,11 @@ extension CommandRunner {
             fillYear(t.year)
             return
         }
-        state.appendLog("准备月白板：\(monthTitle)")
+        state.appendLog(String(localized: "准备月白板：\(monthTitle)"))
         guard let base = await ensureBase(),
               let yearId = await ensureYear(t.year, base: base),
               let monthId = await ensureMonth(t.year, t.month, yearId: yearId, workspace: base.workspace) else {
-            if state.status.isEmpty { state.setStatus("没能建好 \(monthTitle) 的白板，看日志", error: true) }
+            if state.status.isEmpty { state.setStatus(String(localized: "没能建好 \(monthTitle) 的白板，看日志"), error: true) }
             return
         }
         await openBoard(id: monthId, title: monthTitle)
@@ -568,7 +568,7 @@ extension CommandRunner {
               let listId = base.lists[status], let card = await createBoard(title, on: listId, at: CompanionLayout.gridSlot(0, columns: 1),
                                                                              workspace: base.workspace),
               let docId = card.document?.id else {
-            if state.status.isEmpty { state.setStatus("没能新建「\(title)」，看日志", error: true) }
+            if state.status.isEmpty { state.setStatus(String(localized: "没能新建「\(title)」，看日志"), error: true) }
             return
         }
         let back = await relayout((lists[status] ?? []) + [card])
@@ -576,12 +576,12 @@ extension CommandRunner {
         state.projects = companion.allProjects
         state.boards = boardModel?.index.refs ?? state.boards
         let ws = base.workspace
-        undoEntry = UndoEntry(label: "新建「\(title)」", commands: [["delete", card.id]] + back) { [weak self] in
+        undoEntry = UndoEntry(label: String(localized: "新建「\(title)」"), commands: [["delete", card.id]] + back) { [weak self] in
             guard let self else { return }
             self.companion.update(ws) { $0.projectBoards[docId] = nil }
             self.state.projects = self.companion.allProjects
         }
-        state.setStatus("已在 \(status.title) 新建「\(title)」")
+        state.setStatus(String(localized: "已在 \(status.title) 新建「\(title)」"))
         if let boardModel { Task { await boardModel.refresh(reason: "after add project") } }
     }
 
@@ -594,14 +594,14 @@ extension CommandRunner {
         let (targets, fromBoard) = projectTargets()
         guard !state.isRunning else { return }
         guard !targets.isEmpty else {
-            state.setStatus("没有选中 project：只有 Projects 里 project- 开头的白板能改状态", error: true)
+            state.setStatus(String(localized: "没有选中 project：只有 Projects 里 project- 开头的白板能改状态"), error: true)
             return
         }
         state.isRunning = true
         defer { state.isRunning = false }
         state.setStatus("")
         guard let base = await ensureBase(), var lists = await readLists(base), let targetList = base.lists[target] else {
-            if state.status.isEmpty { state.setStatus("读不到 Projects 的三块白板，看日志", error: true) }
+            if state.status.isEmpty { state.setStatus(String(localized: "读不到 Projects 的三块白板，看日志"), error: true) }
             return
         }
         let before = state.projects
@@ -611,7 +611,7 @@ extension CommandRunner {
             guard let (from, card) = ProjectStatus.allCases.lazy.compactMap({ s in
                 lists[s]?.first(where: { Self.isProject($0) && $0.document?.id == t.id }).map { (s, $0) }
             }).first else {
-                state.appendLog("「\(t.title)」不在 Projects 的 Todo / Doing / Done 里，没动")
+                state.appendLog(String(localized: "「\(t.title)」不在 Projects 的 Todo / Doing / Done 里，没动"))
                 continue
             }
             guard from != target else { continue }
@@ -629,23 +629,23 @@ extension CommandRunner {
             boardModel?.index.learn(title: t.title, id: t.id, parentId: targetList)
         }
         guard !moved.isEmpty else {
-            if state.status.isEmpty { state.setStatus("已经在 \(target.title) 里了") }
+            if state.status.isEmpty { state.setStatus(String(localized: "已经在 \(target.title) 里了")) }
             return
         }
         var back: [[String]] = []
         for s in ProjectStatus.allCases where touched.contains(s) { back += await relayout(lists[s] ?? []) }
         companion.update(base.workspace) { reg in for t in targets where moved.contains(t.title) { reg.projectBoards[t.id] = target } }
         state.projects = companion.allProjects
-        let what = moved.count == 1 ? "「\(moved[0])」" : "\(moved.count) 个 project"
-        let label = target == .done ? "完成\(what)" : "把\(what)移到 \(target.title)"
+        let what = moved.count == 1 ? String(localized: "「\(moved[0])」") : String(localized: "\(moved.count) 个 project")
+        let label = target == .done ? String(localized: "完成\(what)") : String(localized: "把\(what)移到 \(target.title)")
         let ws = base.workspace
         undoEntry = UndoEntry(label: label, commands: created.map { ["delete", $0] } + removed.map { ["undelete", $0] } + back) { [weak self] in
             guard let self else { return }
             self.companion.update(ws) { reg in for t in targets { if let s = before[t.id] { reg.projectBoards[t.id] = s } } }
             self.state.projects = self.companion.allProjects
         }
-        state.setStatus(target == .done ? "已完成\(what)，移到 Done" : "已把\(what)移到 \(target.title)")
-        if fromBoard { state.appendLog("当前白板已移到 \(target.title)") }
+        state.setStatus(target == .done ? String(localized: "已完成\(what)，移到 Done") : String(localized: "已把\(what)移到 \(target.title)"))
+        if fromBoard { state.appendLog(String(localized: "当前白板已移到 \(target.title)")) }
         if let boardModel { Task { await boardModel.refresh(reason: "after move project") } }
     }
 }
