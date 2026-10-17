@@ -2,7 +2,7 @@
 
 Allume（原 Muse）白板的伴生命令面板：在 Allume 里按 **⌘K**，它读取当前选中的卡片，从 Allume 窗口顶部弹出面板，
 对这些卡片批量执行 `allume` CLI 命令；Esc、再按一次 ⌘K、点回 Allume 或切走 Allume 都会收起。平时不显示任何东西。所有对 Allume 的操作都走
-`/usr/local/bin/allume`，不截屏、不模拟点击；唯一模拟的按键是发给 Allume 的 ⌘C。
+`/usr/local/bin/allume`，不截屏、不模拟点击；模拟的按键只有发给 Allume 的 ⌘C（读选中）和跳白板后的一次 ⌘[（刷新面包屑）。
 
 ## 构建与运行
 
@@ -52,7 +52,7 @@ scripts/release.sh 0.0.1 --publish  # 另外打 tag v0.0.1、push、建 GitHub R
 
 | 权限 | 用途 | 没有会怎样 |
 |---|---|---|
-| 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，面板才能贴在窗口顶部；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C | 面板不出现，⌘K 读不到选中 |
+| 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，面板才能贴在窗口顶部；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C（以及跳白板后的 ⌘[） | 面板不出现，⌘K 读不到选中 |
 | Allume → Preferences → Command Line 里的读写模式 | `card-gather` / `card-move` 都是写操作 | 面板里显示 `allume card-gather is unavailable: the CLI is in read-only mode`。如果设置里已经是 read-write 还报这个，见下面"CLI 为什么要用 open 启动" |
 
 首次启动会弹系统提示；也可以从菜单栏图标 → "打开辅助功能设置…"。不需要"输入监控"：全局快捷键用的是
@@ -153,7 +153,8 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 
 面板最上面固定两行，不管有没有选中都在同一位置，所以可以闭着眼按：⌘K ⏎ 是"最近去过"，⌘K ↓ ⏎ 是"全部待办"
 （也能输 `最近` / `待办` 直接筛到它们）。⏎ 之后面板换成那张列表，再输字就在列表里筛，⏎ 跳到那块白板
-（`allume open <白板文档id>`，并把 Allume 带到前台，面板关闭），Esc 或空输入框上按 ⌫ 回到命令。
+（`allume open <白板文档id>`，并把 Allume 带到前台，面板关闭；`open` 不会重画 Allume 左上角的面包屑，
+所以同一 id 连开两次再给 Allume 发一次 ⌘[ 退回第二份，面包屑就按正确路径重画），Esc 或空输入框上按 ⌫ 回到命令。
 
 | 列表 | 数据从哪来 | 行 |
 |---|---|---|

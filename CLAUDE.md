@@ -11,7 +11,7 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
 
 ## 硬性约束
 
-- 不截屏、不模拟点击 Allume；唯一允许模拟的按键是发给 Allume 的 ⌘C（读选中用）。
+- 不截屏、不模拟点击 Allume；只允许给 Allume 模拟两个按键：⌘C（读选中用）和跳白板后的一次 ⌘[（刷新面包屑，见下）。
 - 对 Allume 的所有读写都通过 CLI（`AllumeCLI.run`），命令和输出要显示在面板日志里。
 - 面板窗口必须是 `.nonactivatingPanel`，不能抢 Allume 的前台。
 
@@ -44,6 +44,10 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
 - 子白板缩略图由 `BoardThumbnailRenderer` 用 `board-content` 行离屏画出（240×180，文字卡 2–3pt 小字、image/pdf 真图最多 6 张、
   嵌套白板灰块），按白板文档 id 缓存在 `~/Library/Application Support/AllumeCompanion/thumbs/<id>.png` + `<id>.hash`
   （行里影响画面的字段的 SHA-256；相同就不重画。不能哈希整段 JSON：`createdAt` 每次调用都等于调用时间）。`rm -rf` 那个目录即可强制重画。板上没有墨迹数据（只有 `inkStrokeCount`），画不了笔画。
+- `allume open` 换了画布和窗口标题，但 Allume 左上角的面包屑不重画（停在上一块白板的路径）；Allume 里任何一次
+  后退/前进（⌘[ / ⌘]，菜单里没有）都会按包含关系重画成正确路径。`open` 每次都压一条历史（同一 id 连开两次就有两条），
+  所以 `openBoard` 连开两次再发 ⌘[：落在第二份上，画面不闪，只多一条指向同一白板的前进项。深链接 `allume://…` 试过几种都不导航。
+  测跳转：`ALLUME_USR2=open:<白板文档id> open build/AllumeCompanion.app` 后 `kill -USR2`。
 - 当前白板模型（README "当前白板模型"）：`BoardIndex` 用 `list-workspaces` → `board-content --kinds subBoard` BFS 建
   标题→文档 id 表（缓存在 `~/Library/Application Support/AllumeCompanion/boards.json`），`BoardModel` 用一次 `board-content`
   装入当前白板的卡片。⌘K 的 describeSelection 先查模型；撤销快照只在模型 2 秒内刷新过时用它，否则必须现查。

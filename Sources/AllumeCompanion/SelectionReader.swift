@@ -52,7 +52,7 @@ enum SelectionReader {
         if snapMs > 20 || bytes > 1_000_000 { Log.info("pasteboard snapshot: \(saved.count) items, \(bytes) bytes, \(snapMs) ms") }
         let before = pb.changeCount
 
-        postCommandC(to: pid)
+        postCommand(key: 8, to: pid) // kVK_ANSI_C
 
         let deadline = Date().addingTimeInterval(timeout)
         while pb.changeCount == before {
@@ -95,11 +95,12 @@ enum SelectionReader {
 
     // MARK: - ⌘C
 
-    private static func postCommandC(to pid: pid_t) {
+    /// Posts ⌘<key> (a down and an up) straight to `pid`. Used for ⌘C here and, after a jump,
+    /// for ⌘[ (see `CommandRunner.openBoard`); those are the only keys sent to Allume.
+    static func postCommand(key: CGKeyCode, to pid: pid_t) {
         let src = CGEventSource(stateID: .combinedSessionState)
-        let keyC: CGKeyCode = 8 // kVK_ANSI_C
-        guard let down = CGEvent(keyboardEventSource: src, virtualKey: keyC, keyDown: true),
-              let up = CGEvent(keyboardEventSource: src, virtualKey: keyC, keyDown: false) else { return }
+        guard let down = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: true),
+              let up = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: false) else { return }
         down.flags = .maskCommand
         up.flags = .maskCommand
         down.postToPid(pid)

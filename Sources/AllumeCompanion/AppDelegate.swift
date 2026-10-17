@@ -171,7 +171,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Test hook: SIGUSR2 runs a panel command on the current selection, like clicking its button.
         // `ALLUME_USR2` is a command query exactly as one would type it in the panel
-        // ("grid 4", "resize 300x200", "一行", "undo"); default "排成 3 列".
+        // ("grid 4", "resize 300x200", "一行", "undo"); default "排成 3 列". `open:<board id>` jumps there.
         signal(SIGUSR2, SIG_IGN)
         usr2Source = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
         usr2Source?.setEventHandler { [weak self] in
@@ -182,6 +182,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 let query = env["ALLUME_USR2"] ?? "排成 3 列"
                 if query == "test-notification" { self.reminders.sendTest(); return }
+                if query.hasPrefix("open:") {
+                    await self.runner.openBoard(id: String(query.dropFirst(5)), title: "test")
+                    Log.info("panel log:\n" + self.state.log); return
+                }
                 if let match = CommandCatalog.matches(for: query).first {
                     Log.info("test: \"\(query)\" → \(match.title)")
                     await self.runner.run(match.kind)

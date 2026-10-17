@@ -215,15 +215,22 @@ final class CommandRunner {
     // MARK: - Jumping to a board
 
     /// `allume open <board>` and Allume to the front; the panel closes, since the user is leaving.
+    ///
+    /// Allume's `open` swaps the canvas and the window title but leaves the breadcrumb (top left)
+    /// showing the previous board's path; any in-app back/forward redraws it with the right path.
+    /// So open twice and step back once with ⌘[: we land on the second copy, nothing flashes,
+    /// and the only trace is one extra forward entry pointing at the same board.
     func openBoard(id: String, title: String) async {
         state.requestHidePanel?()
-        let r = await exec(["open", id])
-        if r.ok {
-            state.setStatus("已打开「\(title)」")
-            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: AllumeTracker.bundleID).first {
-                app.activate()
-            }
-        }
+        guard await exec(["open", id]).ok else { return }
+        let again = await exec(["open", id], showStdout: false)
+        state.setStatus("已打开「\(title)」")
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: AllumeTracker.bundleID).first else { return }
+        app.activate()
+        guard again.ok else { return }
+        try? await Task.sleep(for: .milliseconds(150))
+        state.appendLog("⌘[ → Allume（让它重画面包屑）")
+        SelectionReader.postCommand(key: 33, to: app.processIdentifier) // kVK_ANSI_LeftBracket
     }
 
     private static func idSuffix(_ id: String) -> String {
