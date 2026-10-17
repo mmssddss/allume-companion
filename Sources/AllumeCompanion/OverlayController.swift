@@ -22,16 +22,13 @@ final class OverlayController {
     let panel: OverlayPanel
     private var window: AllumeTracker.WindowInfo?
 
-    static let panelSize = CGSize(width: 560, height: 400)
-    /// Height the view last asked for (search row + visible rows + footer). Requests that come
-    /// while the panel is hidden (or prewarming, alpha 0) are ignored: a hidden panel stays
-    /// collapsed, as `rearm` left it.
-    private var contentHeight: CGFloat = PanelMetrics.collapsed
+    static let panelSize = CGSize(width: PanelMetrics.width, height: PanelMetrics.maxHeight)
     static let topInset: CGFloat = 52   // never higher than this below Allume's top edge
-    /// The panel is placed as if it were this tall (its tallest, `PanelMetrics.maxHeight`),
-    /// centered in the Allume window: it opens with only the field and unfolds downwards, and
-    /// later growth or shrinking only moves the bottom edge, so the field never moves.
-    private let anchorHeight = PanelMetrics.maxHeight
+    /// True while the panel fades out: it is still on screen but already counts as closed
+    /// (⌘K opens it again, cancelling the fade).
+    private var hiding = false
+    /// Bumped by every show and hide, so a fade-out that finishes after a new show does nothing.
+    private var fadeGeneration = 0
 
     init(state: AppState, runner: CommandRunner) {
         self.state = state
@@ -54,23 +51,6 @@ final class OverlayController {
         }
         NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.hidePanel() }
-        }
-        NotificationCenter.default.addObserver(forName: .panelHeight, object: nil, queue: .main) { [weak self] note in
-            guard let h = note.object as? CGFloat else { return }
-            Task { @MainActor in
-                guard let self, self.panel.isVisible, self.panel.alphaValue > 0, self.contentHeight != h else { return }
-                self.contentHeight = h
-                if let w = self.window {
-                    // Same duration and curve as the list inside (CommandPanelView.resizeAnimation),
-                    // so the bottom edge and the rows move together instead of jumping.
-                    NSAnimationContext.runAnimationGroup { ctx in
-                        ctx.duration = PanelMetrics.resizeDuration
-                        ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                        self.panel.animator().setFrame(self.panelFrame(for: w.frame), display: true)
-                    } completionHandler: { self.panel.invalidateShadow() }
-                }
-                Log.info("panel height → \(h), frame \(self.panel.frame)")
-            }
         }
     }
 
@@ -105,7 +85,7 @@ final class OverlayController {
         return p
     }
 
-    var isPanelVisible: Bool { panel.isVisible }
+    var isPanelVisible: Bool { panel.isVisible && !hiding }
 
     /// Orders the panel in once, fully transparent and off-screen, and out again on the next
     /// run-loop turn: SwiftUI's first layout and the window server's first composite then happen
@@ -141,13 +121,13 @@ final class OverlayController {
         panel.setFrame(frame, display: panel.frame.size != frame.size)
     }
 
-    /// `expectedHeight` sizes the first frame right away, so the panel does not pop up at the
-    /// previous height and then jump once SwiftUI reports the real one. Usually `rearm` already
-    /// left the panel at the collapsed size (field only) with the field cleared, so this is one
-    /// `orderFront` (~5–10 ms); a relayout (~10–20 ms) only happens when the Allume window changed size.
-    func showPanel(expectedHeight: CGFloat? = nil) {
+    /// One size, always (like Raycast): rows fill in from the top, so nothing about the window
+    /// changes after it is up. It fades in; usually the frame is already right (`rearm`, `place`),
+    /// so this is one `orderFront` (~5–10 ms), a relayout only when the Allume window changed size.
+    func showPanel() {
         guard let window else { return }
-        if let h = expectedHeight { contentHeight = h }
+        fadeGeneration += 1
+        hiding = false
         let t0 = Date()
         let frame = panelFrame(for: window.frame)
         var relaid = false
@@ -156,11 +136,43 @@ final class OverlayController {
             panel.setFrame(frame, display: relaid)
         }
         let t1 = Date()
+        if !panel.isVisible { panel.alphaValue = 0 }
         panel.makeKeyAndOrderFront(nil)
         panel.invalidateShadow()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = PanelMetrics.fadeIn
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            panel.animator().alphaValue = 1
+        }
         let t2 = Date()
         NotificationCenter.default.post(name: .panelShown, object: nil)
         Log.info("panel shown at \(panel.frame); setFrame \(Int(t1.timeIntervalSince(t0) * 1000)) ms\(relaid ? " (relaid)" : ""), orderFront \(Int(t2.timeIntervalSince(t1) * 1000)) ms")
+        captureFrames()
+    }
+
+    /// Test hook (`ALLUME_FRAMES=/dir`): after each show, grabs the panel's window every ~25 ms
+    /// for 400 ms into `<dir>/show-<time>/frame-NN-<ms>-a<alpha%>.png`, to check that the opening
+    /// never jumps. The app may capture its own window without Screen Recording;
+    /// `CGWindowListCreateImage` is looked up with dlsym because the SDK marks it unavailable.
+    /// The capture has neither the window's alpha (hence the file name) nor what is behind the glass.
+    private func captureFrames() {
+        guard let dir = ProcessInfo.processInfo.environment["ALLUME_FRAMES"], !dir.isEmpty,
+              let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return }
+        typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        let capture = unsafeBitCast(sym, to: Capture.self)
+        let t0 = Date()
+        let run = URL(fileURLWithPath: dir).appendingPathComponent("show-\(Int(t0.timeIntervalSince1970 * 1000))")
+        try? FileManager.default.createDirectory(at: run, withIntermediateDirectories: true)
+        for i in 0..<16 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.025) { [self] in
+                // optionIncludingWindow = 1 << 3, boundsIgnoreFraming = 1 << 0
+                guard let img = capture(.null, 1 << 3, UInt32(panel.windowNumber), 1 << 0)?.takeRetainedValue(),
+                      let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return }
+                let ms = Int(Date().timeIntervalSince(t0) * 1000)
+                let alpha = Int(((panel.contentView?.window?.alphaValue ?? 0) * 100).rounded())
+                try? png.write(to: run.appendingPathComponent(String(format: "frame-%02d-%03dms-a%03d.png", i, ms, alpha)))
+            }
+        }
     }
 
     /// Test hook: renders the panel's content view into a PNG at `path`.
@@ -172,31 +184,38 @@ final class OverlayController {
         catch { Log.info("panel snapshot failed: \(error)") }
     }
 
+    /// Fades out, then orders out and rearms; a show during the fade cancels it.
     func hidePanel() {
-        guard panel.isVisible else { return }
-        panel.orderOut(nil)
+        guard panel.isVisible, !hiding else { return }
+        hiding = true
+        fadeGeneration += 1
+        let generation = fadeGeneration
         Log.info("panel hidden")
-        rearm()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = PanelMetrics.fadeOut
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            panel.animator().alphaValue = 0
+        } completionHandler: {
+            guard self.fadeGeneration == generation else { return }
+            self.hiding = false
+            self.panel.orderOut(nil)
+            self.rearm()
+        }
     }
 
-    /// Puts the hidden panel into the state the next ⌘K wants: field cleared, list folded away
-    /// (it unfolds once the selection is known), frame at that height. Done now, while nobody
-    /// is waiting, so `showPanel` has nothing left to lay out (see its timings).
+    /// Puts the hidden panel into the state the next ⌘K wants: field cleared, frame in place.
+    /// Done now, while nobody is waiting, so `showPanel` has nothing left to lay out (see its timings).
     private func rearm() {
         NotificationCenter.default.post(name: .panelReset, object: nil)
-        contentHeight = PanelMetrics.collapsed
-        if let w = window { panel.setFrame(panelFrame(for: w.frame), display: true) }
+        if let w = window { place(for: w.frame) }
     }
 
-    /// Anchored at the top (just under Allume's title bar), so growing or shrinking only moves
-    /// the bottom edge; never taller than the space left in the Allume window.
-    /// Centered in the Allume window (at `anchorHeight`), clamped to stay below
-    /// the title bar and inside the window.
+    /// Centered in the Allume window, clamped to stay below the title bar and inside the window.
     private func panelFrame(for w: CGRect) -> CGRect {
         let s = Self.panelSize
         let maxTop = w.maxY - Self.topInset
-        let top = min(maxTop, w.midY + anchorHeight / 2)
-        let height = min(contentHeight, max(120, top - w.minY - 16))
+        let top = min(maxTop, w.midY + PanelMetrics.maxHeight / 2)
+        let height = min(PanelMetrics.maxHeight, max(120, top - w.minY - 16))
         return CGRect(x: w.midX - s.width / 2, y: top - height, width: s.width, height: height)
     }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import Carbon
 import ApplicationServices
+import SwiftUI
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -257,18 +258,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Selection
 
-    /// ⌘K: the panel goes up first (a few ms) with only its field, then the clipboard round trip
-    /// fills in the selection and the list unfolds once (30–110 ms with cards selected,
+    /// ⌘K: the panel fades in at once at its one fixed size with an empty list, then the clipboard
+    /// round trip fills in the selection and the rows fade in (30–110 ms with cards selected,
     /// `SelectionReader.timeout` without).
     func readSelectionAndShow() {
         Task { @MainActor in
             var stats = HotKeyStats()
-            state.selectionPending = true
-            state.selectedCardIds = []
-            state.selectedCards = []
+            // Reset without animation: the rows and the card stack must not fade out on a
+            // panel that is fading in.
+            var reset = Transaction()
+            reset.disablesAnimations = true
+            withTransaction(reset) {
+                state.selectionPending = true
+                state.selectedCardIds = []
+                state.selectedCards = []
+            }
             tracker.refresh()   // 1–2 ms: the AX round trip is not where ⌘K's time goes
             overlay.update(window: tracker.currentWindow())
-            overlay.showPanel(expectedHeight: PanelMetrics.collapsed)
+            overlay.showPanel()
             stats.panelShown()
             do {
                 let cards = try await SelectionReader.capture(pid: tracker.pid)
@@ -284,11 +291,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Log.info("selection failed after \(Int(Date().timeIntervalSince(stats.t0) * 1000)) ms: \(error.localizedDescription)")
             }
             // Which commands are listed depends on the cards' kinds (one sub-board → 打开). The
-            // board model usually has them, with no CLI call: describe first, then unfold the list
-            // once. Otherwise unfold now and let the description catch up.
+            // board model usually has them, with no CLI call: describe first, then fade the rows
+            // in. Otherwise fade them in now and let the description catch up.
             let fromModel = boardModel.lookup(state.selectedCardIds) != nil
             if fromModel { await runner.describeSelection() }
-            state.selectionPending = false
+            withAnimation(.easeOut(duration: PanelMetrics.rowsFade)) { state.selectionPending = false }
             // The panel is one of the model's refresh points; it runs alongside describing
             // the selection (which uses the model as it is now) and re-describes once done.
             // Boards the selection is on besides the current one are reloaded afterwards, so

@@ -63,7 +63,7 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
 - Allume 画布上能直接选到内嵌子白板里的卡片，窗口标题仍是父白板：`BoardModel` 除当前白板外还保留最近选中过的其他白板
   （`lookup` 跨白板找、`adopt` 收下回退路径读到的整块、`refreshOthers` 面板打开后在后台刷新它们）。
 - ⌘K 的面板显示时间几乎全是 `setFrame(display: true)` 的重排，AX 查窗口只要 1–2 ms；所以关面板时就 `rearm`（清输入框、
-  恢复全部命令、摆好尺寸），打开只剩 `orderFront`（5–15 ms）。日志行 `panel shown at …; setFrame X ms (relaid)` 出现
+  摆好位置），打开只剩 `orderFront`（5–15 ms）。日志行 `panel shown at …; setFrame X ms (relaid)` 出现
   "(relaid)" 说明这次重排了。离屏快照（`ALLUME_SNAPSHOT`）渲染不出 `glassEffect`，看玻璃效果只能在屏幕上看。
 - 面板玻璃（macOS 26）是 `NSGlassEffectView` 外包一层圆角 `masksToBounds` 的视图：玻璃自带的软阴影会画到形状外面，
   被方形窗口边界截住后四角留下约 6% 的黑，看起来是灰色方底，窗口阴影也跟着变成方的。SwiftUI 的 `.glassEffect` 一样有这个问题。
@@ -79,11 +79,20 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   但 `alertSetting` 是 enabled 且 `add` 成功，所以判断权限要看 `alertSetting`；`schedule` 每次现查，设置里打开后下次扫描就生效。
   菜单"发一条测试通知"直接投一条并记日志（`ALLUME_USR2=test-notification` + `kill -USR2` 同效）。
   面板模式在 `AppState.panelMode`，Esc 在列表里是返回不是关闭。
-- 面板列表（README "命令面板"）：⌘K 时 `selectionPending` 为真，只显示输入框（`PanelMetrics.collapsed`），⌘C 有结果
-  （卡在模型里时连描述一起）后才一次展开，所以列表在打开时只变一次高。空输入按 `CommandGroup` 分组、按 `CommandSpec.needs`
-  过滤（没选中 / 一张 / 多张 / 一张子白板）；打字时是命令、白板（`AppState.boards` ← `BoardIndex.refs`）、待办三组按最好匹配排序。
-  面板按最高高度（`PanelMetrics.maxHeight`）居中，只往下展开；隐藏时 OverlayController 忽略 `panelHeight`，保持折叠。
+- 面板列表（README "命令面板"）：窗口只有一个尺寸（`PanelMetrics.maxHeight`，列表区固定 8 行高，像 Raycast），打开后
+  不再改大小、不跳；凡是自己变的都淡入淡出（时长在 `PanelMetrics`）：窗口开关（`showPanel` / `hidePanel` 的 alpha，
+  关的途中再 ⌘K 会取消）、⌘C 有结果后各行（AppDelegate 在 `withAnimation` 里把 `selectionPending` 置假；置真和清空选中
+  用 `disablesAnimations`，免得在淡入的窗口上淡出旧内容）、输入框左边的图标、右端的选中小卡片、
+  手画的提示文字、小卡片后到的缩略图。打字筛选和 ↑↓ 是用户自己的操作，不加动画。
+  版式（仿 Raycast）的尺寸都在 `PanelMetrics`（`inset` 左边线、`icon` + `iconGap` 让输入框的字和行标题对齐）。
+  文字用 `Theme.text1/2/3`（label 色的固定不透明度），不用 `.secondary`/`.tertiary`：玻璃里的离屏快照中它们画得和
+  标题几乎一样黑，带颜色的字也丢色（屏幕上未逐一核对）；固定不透明度在快照和屏幕上一致。要强调就用填色小标签或彩色图标。
+  各模式的行 id 不要重名（例如添加待办的草稿行是 `add-todo-draft`，不是命令的 `add-todo`）：LazyVStack 会按 id 复用旧行，画出过期内容。
+  空输入按 `CommandGroup` 分组、按 `CommandSpec.needs` 过滤（没选中 / 一张 / 多张 / 一张子白板）；打字时是命令、
+  白板（`AppState.boards` ← `BoardIndex.refs`）、待办三组按最好匹配排序。
   测各场景：`ALLUME_SELECT_IDS=","`（空选中）/ 一张子白板 id / 多张 id，配 `ALLUME_SNAPSHOT`；打字用 `ALLUME_USR2="type:…"`。
+  测打开过程：`ALLUME_FRAMES=<目录> open build/AllumeCompanion.app` 后真按 ⌘K（或 `kill -USR1`），每次打开在
+  `<目录>/show-<时间>/` 下每 ~25ms 抓一帧窗口（文件名带 ms 时间和窗口 alpha；图里不含 alpha 和玻璃背后的内容）。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。
 - 图标：`Resources/AppIcon.icon`（Icon Composer 格式）由 build-app.sh 里的 `xcrun actool … --app-icon AppIcon` 编成
   Assets.car + AppIcon.icns。`icon.json` 的 `groups` **第一个在最上层**（和 Icon Composer 界面一致）。想看系统真正渲染的

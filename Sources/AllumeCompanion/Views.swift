@@ -7,9 +7,6 @@ extension Notification.Name {
     /// Posted by OverlayController right after the panel is hidden: the field clears and the
     /// selection goes back to the first row, so the next show has nothing to re-layout.
     static let panelReset = Notification.Name("AllumeCompanion.panelReset")
-    /// Posted by the view with the height it wants (`object` is a CGFloat); the panel resizes
-    /// from its top edge so the search row never moves and only the list scrolls.
-    static let panelHeight = Notification.Name("AllumeCompanion.panelHeight")
     /// Test hook (`ALLUME_USR2=type:<text>`): puts `object` (a String) into the panel's field.
     static let panelQuery = Notification.Name("AllumeCompanion.panelQuery")
 }
@@ -19,31 +16,53 @@ enum Theme {
     /// Allume's accent (its asset catalog's `accent`, Display P3 0.388/0.165/0.961): selection
     /// highlight, count badge, and the filament on the app icon.
     static let accent = Color(.displayP3, red: 0.388, green: 0.165, blue: 0.961)
+    /// Text levels as plain opacities of the label color, not the hierarchical `.secondary`:
+    /// inside the glass those rendered nearly as dark as the titles (seen in snapshots), so a
+    /// title and its subtitle could not be told apart. Plain opacities read the same everywhere.
+    static let text1 = Color.primary.opacity(0.88)
+    static let text2 = Color.primary.opacity(0.5)
+    static let text3 = Color.primary.opacity(0.3)
 }
 
 enum PanelMetrics {
     static let cornerRadius: CGFloat = 16
-    /// Height changes (typing filters the list, the selection arrives or times out) animate
-    /// over this, both the window frame (OverlayController) and the rows inside.
-    static let resizeDuration: TimeInterval = 0.15
-    static let searchRow: CGFloat = 62
-    static let row: CGFloat = 46
+    /// The window never changes size or jumps; everything that changes on its own fades:
+    /// the window in and out, the rows once the selection is known, the card stack and the
+    /// field's hint when they change.
+    static let fadeIn: TimeInterval = 0.12
+    static let fadeOut: TimeInterval = 0.1
+    static let rowsFade: TimeInterval = 0.12
+    static let crossFade: TimeInterval = 0.15
+    // Raycast's grid: everything hangs off one left edge (`inset`), the field's text starts
+    // where the row titles start (`inset + icon + iconGap`), rows are one line.
+    static let inset: CGFloat = 16
+    static let icon: CGFloat = 22
+    static let iconGap: CGFloat = 10
+    static let searchRow: CGFloat = 56
+    static let row: CGFloat = 40
     /// A section title ("排列", "白板") above its rows.
-    static let header: CGFloat = 26
-    static let listPadding: CGFloat = 16
-    static let footer: CGFloat = 30
-    static let maxRows = 8
-    /// Taller lists scroll.
-    static let maxList = CGFloat(maxRows) * row
-    /// Field and footer only: the panel between ⌘K and the selection being known.
-    static let collapsed = searchRow + footer
-    static let maxHeight = height(list: maxList + listPadding)
-    /// The list's height for that many rows and section titles (0 = folded away).
-    static func listHeight(rows: Int, headers: Int) -> CGFloat {
-        min(CGFloat(max(1, rows)) * row + CGFloat(headers) * header, maxList) + listPadding
-    }
-    static func height(list: CGFloat) -> CGFloat {
-        searchRow + (list > 0 ? 1 + list : 0) + footer
+    static let header: CGFloat = 30
+    static let listPadding: CGFloat = 6
+    static let footer: CGFloat = 40
+    static let maxRows = 9
+    /// The list area, always this tall (like Raycast): fewer rows leave space below, more scroll.
+    static let list = CGFloat(maxRows) * row + 2 * listPadding
+    /// The panel's one height.
+    static let maxHeight = searchRow + 1 + list + 1 + footer
+    static let width: CGFloat = 640
+}
+
+extension CommandGroup {
+    /// Icon color of the group's commands (Raycast-style colored squares).
+    var tint: Color {
+        switch self {
+        case .board: return .teal
+        case .arrange: return Theme.accent
+        case .size: return .pink
+        case .navigate: return .blue
+        case .create: return .green
+        case .edit: return .gray
+        }
     }
 }
 
@@ -55,15 +74,18 @@ struct PanelSection: Identifiable {
 }
 
 /// One row of the panel, whatever list is showing: a command, a recently visited board, or a
-/// todo. `run` is what ⏎ does.
+/// todo. Laid out like Raycast on one line: colored icon, title, grey subtitle (`hint`), and a
+/// grey `accessory` at the right edge. `run` is what ⏎ does; `action` names it in the footer.
 struct PanelRow: Identifiable {
     let id: String
     let symbol: String
+    var tint: Color = .gray
     let title: String
     let hint: String
-    /// Short status at the right edge (a todo's "今天" / "已过期 2 天"); nil for most rows.
-    var trailing: String? = nil
-    var trailingIsUrgent = false
+    /// What kind of row, or a short status ("今天", "已过期 2 天", "3 小时前").
+    var accessory: String? = nil
+    var accessoryIsUrgent = false
+    var action = "执行"
     let run: () -> Void
 }
 
@@ -71,7 +93,7 @@ struct PanelRow: Identifiable {
 /// and the matching rows below, in titled sections. With an empty field the sections are the
 /// commands that fit the selection (none / one card / several / one sub-board), grouped by
 /// `CommandGroup`; typing ranks a "命令", a "白板" (BoardIndex) and a "待办" section against
-/// each other. Between ⌘K and the selection being known only the field shows. ↑/↓ pick, ⏎ runs, Esc or ⌘K closes. Two rows are not commands
+/// each other. Between ⌘K and the selection being known the list is empty; then the rows fade in. ↑/↓ pick, ⏎ runs, Esc or ⌘K closes. Two rows are not commands
 /// but lists ("最近去过", "全部待办"): ⏎ on them swaps the rows for that list (filtered by what
 /// is typed), ⏎ on a list row jumps to its board, Esc or ⌫ on an empty field comes back.
 struct CommandPanelView: View {
@@ -99,7 +121,6 @@ struct CommandPanelView: View {
     private var sections: [PanelSection] {
         switch state.panelMode {
         case .commands:
-            if state.selectionPending { return [] }
             let trimmed = query.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty {
                 return CommandGroup.allCases.compactMap { g in
@@ -146,12 +167,9 @@ struct CommandPanelView: View {
 
     private var rows: [PanelRow] { sections.flatMap(\.rows) }
 
-    /// Folded away (0) while the selection is being read; otherwise rows plus section titles.
-    private var listHeight: CGFloat {
-        if state.panelMode == .commands && state.selectionPending { return 0 }
-        let s = sections
-        return PanelMetrics.listHeight(rows: s.reduce(0) { $0 + $1.rows.count }, headers: s.filter { $0.title != nil }.count)
-    }
+    /// The rows are invisible (not removed) while the selection is being read; AppDelegate fades
+    /// them in by flipping `selectionPending` inside `withAnimation`.
+    private var listHidden: Bool { state.panelMode == .commands && state.selectionPending }
 
     /// The "添加待办" field's rows: first what ⏎ adds (the exact body that will be written, the
     /// same `@todo(due: …) 内容` line `TodoIndex` reads), then the date phrases the half-typed
@@ -163,20 +181,20 @@ struct CommandPanelView: View {
         let board = runner.boardModel?.title ?? state.boardTitle
         let place = board.isEmpty ? "当前白板" : "「\(board)」"
         let dueText = draft.due.flatMap { iso in DateWords.match(in: iso, atEnd: true).map { DateWords.describe($0.date) } }
-        var rows = [PanelRow(id: "add-todo", symbol: "plus.circle",
+        var rows = [PanelRow(id: "add-todo-draft", symbol: "plus", tint: CommandGroup.create.tint,
                              title: draft.text.isEmpty ? "输入待办内容" : draft.body,
-                             hint: draft.text.isEmpty ? "⏎ 贴到\(place)；日期写在开头或末尾：明天、下周二、月底、3天后、10-20"
-                                                      : "⏎ 贴到\(place)" + (draft.due == nil ? "；没有到期日" : ""),
-                             trailing: dueText) {
+                             hint: draft.text.isEmpty ? "日期写在开头或末尾：明天、下周二、月底、3天后、10-20"
+                                                      : "贴到\(place)" + (draft.due == nil ? "，没有到期日" : ""),
+                             accessory: dueText, action: "添加") {
             guard !draft.text.isEmpty else { return }
             Task { await runner.addTodo(raw) }
         }]
         if let c = DateWords.completions(for: raw) {
             for p in c.phrases {
                 let filled = raw.replacingCharacters(in: c.fragment, with: DateWords.iso(p.date))
-                rows.append(PanelRow(id: "date-" + p.text, symbol: "calendar", title: p.text,
+                rows.append(PanelRow(id: "date-" + p.text, symbol: "calendar", tint: .red, title: p.text,
                                      hint: "\(DateWords.iso(p.date)) · \(DateWords.describe(p.date))",
-                                     trailing: rows.count == 1 ? "Tab" : nil) {
+                                     accessory: "日期", action: "填入日期") {
                     query = filled
                 })
             }
@@ -205,19 +223,31 @@ struct CommandPanelView: View {
 
     private func commandRow(_ m: CommandMatch) -> PanelRow {
         var hint = m.spec.hint
-        if case .recentBoards = m.kind {
-            hint = state.recentBoards.first.map { "上一站「\($0.title)」· \(relativeTime($0.at))" } ?? "还没有足迹（切换白板时会记下来）"
-        } else if case .allTodos = m.kind {
+        var accessory = "命令"
+        var urgent = false
+        var action = "执行"
+        switch m.kind {
+        case .recentBoards:
+            hint = state.recentBoards.first.map { "上一站「\($0.title)」" } ?? "切换白板时会记下来"
+            accessory = state.recentBoards.first.map { relativeTime($0.at) } ?? accessory
+            action = "打开列表"
+        case .allTodos:
             let due = state.todos.filter { ($0.daysLeft() ?? 1) <= 0 }.count
-            hint = state.todos.isEmpty ? "没有正文以 @todo 开头的卡" : "\(state.todos.count) 条" + (due > 0 ? "，\(due) 条已到期" : "")
-        } else if case .undo = m.kind, let label = state.undoLabel {
-            hint = "撤回「\(label)」（Allume 自己的 ⌘Z 撤不掉 CLI 做的事）"
+            hint = state.todos.isEmpty ? "还没有 @todo 卡" : "\(state.todos.count) 条"
+            if due > 0 { accessory = "\(due) 条到期"; urgent = true }
+            action = "打开列表"
+        case .undo:
+            if let label = state.undoLabel { hint = "撤回「\(label)」" }
+        case .home, .openSelectedBoard: action = "跳转"
+        case .addTodo: action = "新建"
+        default: break
         }
         var title = m.title
         if case .openSelectedBoard = m.kind, let card = state.selectedCards.first, !card.title.isEmpty {
             title = "打开「\(card.title)」"
         }
-        return PanelRow(id: m.id, symbol: m.spec.symbol, title: title, hint: hint) {
+        return PanelRow(id: m.id, symbol: m.spec.symbol, tint: m.spec.group.tint, title: title, hint: hint,
+                        accessory: accessory, accessoryIsUrgent: urgent, action: action) {
             switch m.kind {
             case .recentBoards: state.panelMode = .recentBoards
             case .allTodos: state.panelMode = .allTodos
@@ -228,15 +258,18 @@ struct CommandPanelView: View {
     }
 
     private func boardRow(_ v: VisitTrail.Visit) -> PanelRow {
-        PanelRow(id: v.boardId, symbol: "rectangle.on.rectangle", title: v.title.isEmpty ? "（无标题白板）" : v.title,
-                 hint: relativeTime(v.at)) {
+        PanelRow(id: v.boardId, symbol: "rectangle.on.rectangle", tint: CommandGroup.board.tint,
+                 title: v.title.isEmpty ? "（无标题白板）" : v.title,
+                 hint: state.boards.first { $0.id == v.boardId }?.path ?? "",
+                 accessory: relativeTime(v.at), action: "跳转") {
             Task { await runner.openBoard(id: v.boardId, title: v.title) }
         }
     }
 
     private func searchBoardRow(_ b: BoardRef) -> PanelRow {
-        PanelRow(id: "b:" + b.id, symbol: "rectangle.on.rectangle", title: b.title.isEmpty ? "（无标题白板）" : b.title,
-                 hint: b.path.isEmpty ? "workspace 首页" : b.path) {
+        PanelRow(id: "b:" + b.id, symbol: "rectangle.on.rectangle", tint: CommandGroup.board.tint,
+                 title: b.title.isEmpty ? "（无标题白板）" : b.title,
+                 hint: b.path.isEmpty ? "workspace 首页" : b.path, accessory: "白板", action: "跳转") {
             Task { await runner.openBoard(id: b.id, title: b.title) }
         }
     }
@@ -245,9 +278,10 @@ struct CommandPanelView: View {
 
     private func todoRow(_ t: TodoItem, idPrefix: String) -> PanelRow {
         let days = t.daysLeft()
-        return PanelRow(id: idPrefix + t.cardId, symbol: (days ?? 1) <= 0 ? "exclamationmark.circle" : "circle",
-                        title: t.label, hint: "白板：\(t.boardTitle)",
-                        trailing: t.dueLabel, trailingIsUrgent: (days ?? 1) <= 0) {
+        return PanelRow(id: idPrefix + t.cardId, symbol: (days ?? 1) <= 0 ? "exclamationmark" : "checkmark",
+                        tint: (days ?? 1) <= 0 ? .red : .orange,
+                        title: t.label, hint: t.boardTitle,
+                        accessory: t.dueLabel ?? "待办", accessoryIsUrgent: (days ?? 1) <= 0, action: "跳到白板") {
             Task { await runner.openBoard(id: t.boardId, title: t.boardTitle) }
         }
     }
@@ -255,10 +289,9 @@ struct CommandPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             searchRow
-            if listHeight > 0 {
-                Divider()
-                results
-            }
+            Divider()
+            results
+            Divider()
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -268,7 +301,6 @@ struct CommandPanelView: View {
             if !query.isEmpty { query = "" }
             if selectedIndex != 0 { selectedIndex = 0 }
             fieldFocused = true
-            postHeight() // a preset selection (test hook) never changes `listHeight` on its own
         }
         .onReceive(NotificationCenter.default.publisher(for: .panelReset)) { _ in
             if !query.isEmpty { query = "" }
@@ -280,12 +312,6 @@ struct CommandPanelView: View {
         }
         .onChange(of: query) { _, _ in selectedIndex = 0; autoReplaceDate() }
         .onChange(of: state.panelMode) { _, _ in query = ""; selectedIndex = 0; fieldFocused = true }
-        .onAppear { postHeight() }
-        .onChange(of: listHeight) { _, _ in postHeight() }
-    }
-
-    private func postHeight() {
-        NotificationCenter.default.post(name: .panelHeight, object: PanelMetrics.height(list: listHeight))
     }
 
     /// On macOS 26 the Liquid Glass is the panel's NSGlassEffectView (OverlayController), so
@@ -302,18 +328,24 @@ struct CommandPanelView: View {
     // MARK: - Search row
 
     private var searchRow: some View {
-        HStack(spacing: 12) {
-            if state.panelMode != .commands {
-                Image(systemName: modeSymbol)
-                    .font(.system(size: 18)).foregroundStyle(.secondary)
-            } else if !state.selectedCardIds.isEmpty {
-                CardStackView(cards: state.selectedCards, count: state.selectedCardIds.count)
-            } else if state.selectionPending {
-                CardStackPlaceholder()
-            }
-            TextField(placeholder, text: $query)
+        HStack(spacing: PanelMetrics.iconGap) {
+            leadingIcon
+            // The hint is drawn by hand so a change (entering a list) cross-fades.
+            TextField("", text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 20, weight: .regular))
+                .font(.system(size: 18))
+                .background(alignment: .leading) {
+                    if query.isEmpty {
+                        Text(placeholder)
+                            .font(.system(size: 18))
+                            .foregroundStyle(Theme.text3)
+                            .lineLimit(1)
+                            .allowsHitTesting(false)
+                            .id(placeholder)
+                            .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: PanelMetrics.crossFade), value: placeholder)
                 .focused($fieldFocused)
                 .onSubmit { runSelected() }
                 .onKeyPress(.downArrow) { move(1); return .handled }
@@ -328,9 +360,45 @@ struct CommandPanelView: View {
                     return .handled
                 }
             if state.isRunning { ProgressView().controlSize(.small) }
+            selectionChip
         }
-        .padding(.horizontal, 14)
+        .padding(.leading, PanelMetrics.inset)
+        .padding(.trailing, PanelMetrics.inset)
         .frame(height: PanelMetrics.searchRow)
+    }
+
+    /// Left of the field, the same size as a row icon so the field's text lines up with the row
+    /// titles: the app icon, or in a list that list's icon. A change cross-fades.
+    private var leadingIcon: some View {
+        ZStack {
+            if state.panelMode == .commands {
+                Image(nsImage: NSApplication.shared.applicationIconImage)
+                    .resizable().frame(width: PanelMetrics.icon + 4, height: PanelMetrics.icon + 4)
+                    .transition(.opacity)
+            } else {
+                RowIcon(symbol: modeSymbol, tint: modeTint).transition(.opacity)
+            }
+        }
+        .frame(width: PanelMetrics.icon, height: PanelMetrics.icon)
+        .animation(.easeOut(duration: PanelMetrics.crossFade), value: state.panelMode)
+    }
+
+    /// Right end of the search row (where Raycast puts its accessory): what is selected, as a
+    /// small card stack and a label. Fades in when the selection arrives; the field never moves.
+    private var selectionChip: some View {
+        let show = state.panelMode == .commands && !state.selectedCardIds.isEmpty
+        let n = state.selectedCardIds.count
+        let title = state.selectedCards.first?.title ?? ""
+        let label = n == 1 && !title.isEmpty ? (title.count > 14 ? title.prefix(13) + "…" : title) : "\(n) 张卡"
+        return HStack(spacing: 8) {
+            if show {
+                CardStackView(cards: state.selectedCards, count: n)
+                Text(label).font(.system(size: 13)).foregroundStyle(Theme.text2).lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .transition(.opacity)
+        .animation(.easeOut(duration: PanelMetrics.crossFade), value: show)
     }
 
     private var footerKeys: String {
@@ -344,9 +412,13 @@ struct CommandPanelView: View {
     private var modeSymbol: String {
         switch state.panelMode {
         case .allTodos: return "checklist"
-        case .addTodo: return "plus.circle"
+        case .addTodo: return "plus"
         default: return "clock.arrow.circlepath"
         }
+    }
+
+    private var modeTint: Color {
+        state.panelMode == .addTodo ? CommandGroup.create.tint : CommandGroup.navigate.tint
     }
 
     /// With nothing selected the field just invites a command; the reason nothing was read
@@ -356,10 +428,7 @@ struct CommandPanelView: View {
         case .recentBoards: return "筛选最近去过的白板…"
         case .allTodos: return "筛选待办…"
         case .addTodo: return "待办内容，加个日期：下周二 交房租"
-        case .commands:
-            if state.selectedCardIds.isEmpty { return "输入命令、白板或待办…" }
-            if state.selectedCardIds.count == 1, let t = state.selectedCards.first?.title, !t.isEmpty { return "对「\(t)」做什么？" }
-            return "对 \(state.selectedCardIds.count) 张卡做什么？排列、大小…"
+        case .commands: return "搜索命令、白板、待办…"
         }
     }
 
@@ -367,7 +436,7 @@ struct CommandPanelView: View {
 
     private var emptyText: String {
         switch state.panelMode {
-        case .commands: return "没有匹配的命令、白板或待办"
+        case .commands: return "没有匹配的结果"
         case .recentBoards: return state.recentBoards.isEmpty ? "还没有足迹：切换白板时会记下来" : "没有匹配的白板"
         case .allTodos: return state.todos.isEmpty ? "没有待办：正文第一行写 @todo 的文字卡会出现在这里" : "没有匹配的待办"
         case .addTodo: return ""
@@ -385,31 +454,33 @@ struct CommandPanelView: View {
         return ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if sections.allSatisfy({ $0.rows.isEmpty }) {
-                        Text(emptyText).foregroundStyle(.tertiary)
-                            .padding(.horizontal, 10).frame(height: PanelMetrics.row)
-                    }
                     ForEach(Array(sections.enumerated()), id: \.element.id) { si, section in
                         if let title = section.title {
-                            Text(title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                                .padding(.horizontal, 10).padding(.top, 6)
-                                .frame(height: PanelMetrics.header, alignment: .leading)
+                            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.text2)
+                                .padding(.horizontal, PanelMetrics.inset - 8)
+                                .padding(.bottom, 6)
+                                .frame(height: PanelMetrics.header, alignment: .bottomLeading)
                                 .id("h:" + section.id)
                         }
                         ForEach(Array(section.rows.enumerated()), id: \.element.id) { ri, r in
                             let i = firstIndex[si] + ri
                             ResultRow(row: r, selected: i == selectedIndex)
-                                .frame(height: PanelMetrics.row)
                                 .contentShape(Rectangle())
                                 .onTapGesture { selectedIndex = i; runSelected() }
                                 .id(r.id)
                         }
                     }
                 }
-                .padding(8)
+                .padding(.horizontal, 8)
+                .padding(.vertical, PanelMetrics.listPadding)
             }
-            .frame(height: listHeight)
-            .animation(.easeOut(duration: PanelMetrics.resizeDuration), value: listHeight)
+            .overlay {
+                if sections.allSatisfy({ $0.rows.isEmpty }), !emptyText.isEmpty {
+                    Text(emptyText).font(.system(size: 13)).foregroundStyle(Theme.text2)
+                }
+            }
+            .frame(height: PanelMetrics.list)
+            .opacity(listHidden ? 0 : 1)
             .onChange(of: selectedIndex) { _, i in
                 guard let si = firstIndex.lastIndex(where: { $0 <= i }), sections.indices.contains(si) else { return }
                 let section = sections[si]
@@ -422,26 +493,47 @@ struct CommandPanelView: View {
         }
     }
 
+    /// Raycast's action bar: where you are (or the last result) on the left; on the right what
+    /// ⏎ does to the highlighted row and what Esc does, with their keys.
     private var footer: some View {
-        HStack(spacing: 5) {
-            if state.panelMode == .addTodo {
-                Text("添加待办").font(.caption).foregroundStyle(.tertiary)
-            } else if state.panelMode != .commands {
-                Text(state.panelMode == .allTodos ? "全部待办 · \(rows.count) 条" : "最近去过 · \(rows.count) 块白板")
-                    .font(.caption).foregroundStyle(.tertiary)
-            } else if !state.status.isEmpty {
-                Image(systemName: state.statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(state.statusIsError ? Color.orange : Color.green)
-                Text(state.status).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            } else if !state.boardTitle.isEmpty {
-                Text("白板：\(state.boardTitle)").font(.caption).foregroundStyle(.tertiary)
+        HStack(spacing: 8) {
+            footerLeft
+            Spacer(minLength: 12)
+            if !listHidden, rows.indices.contains(selectedIndex) {
+                Text(rows[selectedIndex].action).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.text1)
+                KeyCap("↩")
+                Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 14).padding(.horizontal, 4)
             }
-            Spacer()
-            Text(footerKeys).font(.caption2).foregroundStyle(.tertiary)
+            if state.panelMode == .addTodo {
+                Text("补全日期").font(.system(size: 12)).foregroundStyle(Theme.text2)
+                KeyCap("tab")
+                Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 14).padding(.horizontal, 4)
+            }
+            Text(state.panelMode == .commands ? "关闭" : "返回").font(.system(size: 12)).foregroundStyle(Theme.text2)
+            KeyCap("esc")
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, PanelMetrics.inset)
         .frame(height: PanelMetrics.footer)
+        .background(Color.primary.opacity(0.03))
+    }
+
+    @ViewBuilder private var footerLeft: some View {
+        HStack(spacing: 6) {
+            if state.panelMode == .commands, !state.status.isEmpty {
+                Image(systemName: state.statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                    .foregroundStyle(state.statusIsError ? Color.orange : Color.green)
+                Text(state.status).foregroundStyle(Theme.text2)
+            } else if state.panelMode == .allTodos {
+                Text("全部待办 · \(rows.count) 条").foregroundStyle(Theme.text2)
+            } else if state.panelMode == .recentBoards {
+                Text("最近去过 · \(rows.count) 块白板").foregroundStyle(Theme.text2)
+            } else if !state.boardTitle.isEmpty {
+                Image(systemName: "rectangle.on.rectangle").foregroundStyle(Theme.text3)
+                Text(state.boardTitle).foregroundStyle(Theme.text2)
+            }
+        }
+        .font(.system(size: 12))
+        .lineLimit(1)
     }
 
     // MARK: - Actions
@@ -461,85 +553,100 @@ struct CommandPanelView: View {
     }
 }
 
+/// One line, Raycast-style: colored icon, title, grey subtitle, grey accessory at the right.
+/// The highlighted row gets a light grey rounded background; nothing else about it changes.
 private struct ResultRow: View {
     let row: PanelRow
     let selected: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: row.symbol)
-                .frame(width: 22)
-                .foregroundStyle(selected ? Color.white : Color.secondary)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(row.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
-                Text(row.hint).font(.caption).lineLimit(1)
-                    .foregroundStyle(selected ? Color.white.opacity(0.8) : Color.secondary)
+        HStack(spacing: PanelMetrics.iconGap) {
+            RowIcon(symbol: row.symbol, tint: row.tint)
+            Text(row.title).font(.system(size: 14)).foregroundStyle(Theme.text1)
+                .lineLimit(1).layoutPriority(1)
+            Text(row.hint).font(.system(size: 14)).foregroundStyle(Theme.text2)
+                .lineLimit(1)
+            Spacer(minLength: 12)
+            if let a = row.accessory {
+                if row.accessoryIsUrgent {
+                    // A filled tag, not red text: colored text inside the glass rendered black in snapshots.
+                    Text(a).font(.system(size: 12, weight: .medium)).foregroundStyle(.white)
+                        .padding(.horizontal, 7).frame(height: 20)
+                        .background(Color.red.opacity(0.85), in: Capsule())
+                        .lineLimit(1).layoutPriority(1)
+                } else {
+                    Text(a).font(.system(size: 13)).foregroundStyle(Theme.text2)
+                        .lineLimit(1).layoutPriority(1)
+                }
             }
-            Spacer()
-            if let t = row.trailing {
-                Text(t).font(.caption.weight(.medium))
-                    .foregroundStyle(selected ? Color.white : (row.trailingIsUrgent ? Color.orange : Color.secondary))
-            }
-            if selected { Text("⏎").font(.caption).foregroundStyle(Color.white.opacity(0.8)) }
         }
-        .padding(.horizontal, 10)
-        .frame(maxHeight: .infinity)
-        .foregroundStyle(selected ? Color.white : Color.primary)
-        .background(selected ? Theme.accent : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, PanelMetrics.inset - 8)
+        .frame(height: PanelMetrics.row)
+        .background {
+            if selected { RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.08)) }
+        }
     }
 }
 
-/// Up to three overlapping cards with the count badge: the "what you selected" token.
+/// A white SF Symbol on a colored rounded square, like Raycast's command icons.
+struct RowIcon: View {
+    let symbol: String
+    let tint: Color
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 6, style: .continuous)
+            .fill(LinearGradient(colors: [tint.opacity(0.8), tint], startPoint: .top, endPoint: .bottom))
+            .overlay {
+                Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+            }
+            .frame(width: PanelMetrics.icon, height: PanelMetrics.icon)
+    }
+}
+
+/// A key on the footer: "↩", "esc", "tab".
+private struct KeyCap: View {
+    let key: String
+    init(_ key: String) { self.key = key }
+
+    var body: some View {
+        Text(key)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(Theme.text2)
+            .padding(.horizontal, 5)
+            .frame(minWidth: 20, minHeight: 20)
+            .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+    }
+}
+
+/// Up to three small overlapping cards: the "what you selected" token at the right of the
+/// search row (the count is in the label next to it).
 struct CardStackView: View {
     let cards: [CardSummary]
     let count: Int
 
     /// How many faces the stack draws (and how many thumbnails are fetched per ⌘K).
     static let visible = 3
-    private let size = CGSize(width: 60, height: 42)
+    private let size = CGSize(width: 30, height: 22)
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        let shown = min(max(cards.count, 1), Self.visible)
+        ZStack(alignment: .bottomLeading) {
             ForEach(Array(cards.prefix(Self.visible).enumerated().reversed()), id: \.element.id) { i, card in
                 CardFace(card: card, size: size)
-                    .offset(x: CGFloat(i) * 6, y: CGFloat(i) * -4)
-            }
-            if count > 0 {
-                Text("\(count)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Theme.accent, in: Capsule())
-                    .offset(x: size.width - 10 + CGFloat(min(cards.count, Self.visible) - 1) * 6, y: -10)
+                    .offset(x: CGFloat(i) * 4, y: CGFloat(i) * -3)
             }
         }
-        .frame(width: size.width + 14, height: size.height + 8, alignment: .bottomLeading)
-        .padding(.top, 4)
+        .frame(width: size.width + CGFloat(shown - 1) * 4, height: size.height + CGFloat(shown - 1) * 3, alignment: .bottomLeading)
     }
 }
 
-/// Stands where the card stack will be while the clipboard round trip is in flight (the panel
-/// is already up), so the field does not jump right when the cards arrive 30–100 ms later.
-/// Same footprint as `CardStackView`. Gone when nothing turns out to be selected.
-private struct CardStackPlaceholder: View {
-    var body: some View {
-        RoundedRectangle(cornerRadius: 6)
-            .strokeBorder(.quaternary, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-            .frame(width: 60, height: 42)
-            .frame(width: 60 + 14, height: 42 + 8, alignment: .bottomLeading)
-            .padding(.top, 4)
-    }
-}
-
-/// One card in the stack. With a thumbnail the picture fills the card (aspect fill, rounded
-/// clip) and the title sits on a translucent bar at the bottom; text/chain cards show the first
-/// words of their body; everything else is the kind's icon plus the title.
+/// One card in the stack: its thumbnail (aspect fill), else the kind's icon.
 private struct CardFace: View {
     let card: CardSummary
     let size: CGSize
 
     var body: some View {
-        ZStack(alignment: .bottomLeading) {
+        ZStack {
             Color(nsColor: .windowBackgroundColor)
             if let img = card.thumbnail {
                 Image(nsImage: img)
@@ -547,38 +654,15 @@ private struct CardFace: View {
                     .scaledToFill()
                     .frame(width: size.width, height: size.height)
                     .clipped()
-                if !card.title.isEmpty {
-                    Text(card.title)
-                        .font(.system(size: 8, weight: .medium))
-                        .lineLimit(1)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 4).padding(.vertical, 2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.black.opacity(0.45))
-                }
-            } else if !card.excerpt.isEmpty {
-                Text(card.excerpt)
-                    .font(.system(size: 7.5))
-                    .lineLimit(4)
-                    .foregroundStyle(.primary)
-                    .padding(4)
-                    .frame(width: size.width, height: size.height, alignment: .topLeading)
             } else {
-                VStack(alignment: .leading, spacing: 2) {
-                    Image(systemName: symbol).font(.system(size: 9)).foregroundStyle(.secondary)
-                    Text(card.title.isEmpty ? "…" : card.title)
-                        .font(.system(size: 9, weight: .medium))
-                        .lineLimit(2)
-                        .foregroundStyle(.primary)
-                }
-                .padding(5)
-                .frame(width: size.width, height: size.height, alignment: .topLeading)
+                Image(systemName: symbol).font(.system(size: 9)).foregroundStyle(Theme.text2)
             }
         }
         .frame(width: size.width, height: size.height)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
-        .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+        .animation(.easeOut(duration: PanelMetrics.crossFade), value: card) // kind, thumbnail arrive later
+        .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(.quaternary))
+        .shadow(color: .black.opacity(0.15), radius: 1.5, y: 0.5)
     }
 
     private var symbol: String {
