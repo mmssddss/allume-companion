@@ -5,7 +5,7 @@ import Foundation
 ///
 ///     workspace-Companion
 ///     ├─ Daily Notes › 2026 › 2026-10 › 2026-10-17   (a year is four rows of quarters; a month is
-///     │                                               a calendar under a 一 … 日 header)
+///     │                                               a calendar under a 一 … 日 / Mon … Sun header)
 ///     └─ Projects › Todo / Doing / Done              (project-<name> boards, newest top left)
 ///
 /// Every board here is created by the companion and its id is kept in companion.json, so it
@@ -30,7 +30,13 @@ enum CompanionSettings {
     private static let d = UserDefaults.standard
     static func registerDefaults() {
         d.register(defaults: ["companion.weekStartsMonday": true, "companion.newProjectStatus": "todo",
-                              "companion.projectColumns": 6])
+                              "companion.projectColumns": 6, "companion.headerLanguage": "zh"])
+    }
+    /// Language the weekday headers on the month boards are in ("zh" / "en"); every version
+    /// before English headers wrote Chinese ones.
+    static var headerLanguage: String {
+        get { d.string(forKey: "companion.headerLanguage") ?? "zh" }
+        set { d.set(newValue, forKey: "companion.headerLanguage") }
     }
     static var weekStartsMonday: Bool {
         get { d.bool(forKey: "companion.weekStartsMonday") }
@@ -53,8 +59,23 @@ enum CompanionLayout {
     static let dailyTitle = "Daily Notes"
     static let projectsTitle = "Projects"
     static let projectPrefix = "project-"
-    /// Weekday header, Monday first.
+    /// Weekday header, Monday first, in each board language.
     static let weekdayNames = ["一", "二", "三", "四", "五", "六", "日"]
+    static let englishWeekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+    /// "en" or "zh": the language the UI runs in (System Settings, per app or system-wide),
+    /// which is also what the companion writes on the boards.
+    static var boardLanguage: String {
+        (Bundle.main.preferredLocalizations.first ?? "en").hasPrefix("zh") ? "zh" : "en"
+    }
+
+    static func weekdayNames(_ language: String) -> [String] { language == "zh" ? weekdayNames : englishWeekdayNames }
+
+    /// A header card's text in `language` ("一" → "Mon"); nil when `text` is no weekday header.
+    static func weekdayName(translating text: String, to language: String) -> String? {
+        guard let i = weekdayNames.firstIndex(of: text) ?? englishWeekdayNames.firstIndex(of: text) else { return nil }
+        return weekdayNames(language)[i]
+    }
 
     /// A sub-board card comes out 200×150 and its title is drawn ~25pt above the frame, so rows
     /// leave room for it. A text card is at least 170×40.
@@ -84,9 +105,10 @@ enum CompanionLayout {
     /// Year board: three months a row, one row per quarter.
     static func monthSlot(_ month: Int) -> Slot { gridSlot(month - 1, columns: 3) }
 
-    /// The 一 … 日 text cards along the top of a month board (170 wide, centred over a column).
-    static func weekdayHeader(mondayFirst: Bool) -> [(text: String, x: Double, y: Double)] {
-        let names = mondayFirst ? weekdayNames : ["日"] + weekdayNames.dropLast()
+    /// The 一 … 日 (Mon … Sun) text cards along the top of a month board (170 wide, centred over a column).
+    static func weekdayHeader(mondayFirst: Bool, language: String) -> [(text: String, x: Double, y: Double)] {
+        let all = weekdayNames(language)
+        let names = mondayFirst ? all : [all[6]] + all.dropLast()
         return names.enumerated().map { i, n in (n, origin + Double(i) * pitchX + 15, origin) }
     }
 
@@ -169,6 +191,8 @@ final class CompanionStore {
     var workspace: (id: String, root: String)?
     /// The background fill of a year's months and days; one at a time.
     var fill: Task<Void, Never>?
+    /// The background rewrite of the weekday headers (`relabelWeekdaysIfNeeded`).
+    var relabel: Task<Void, Never>?
 
     init() {
         if let data = try? Data(contentsOf: Self.fileURL),
@@ -184,6 +208,11 @@ final class CompanionStore {
         change(&r)
         registries[workspace] = r
         save()
+    }
+
+    /// Every month board across workspaces, by title (workspace-qualified when titles repeat).
+    var allMonths: [String: String] {
+        registries.reduce(into: [:]) { acc, w in for (t, id) in w.value.months { acc[acc[t] == nil ? t : "\(w.key) \(t)"] = id } }
     }
 
     /// Every known project across workspaces, for listing the status commands.
@@ -458,10 +487,11 @@ extension CommandRunner {
         guard let onMonth = await rows(of: monthId, background: true) else { return }
         let mondayFirst = CompanionSettings.weekStartsMonday
         var ok = true
-        let names = Set(CompanionLayout.weekdayNames)
-        let hasHeader = onMonth.contains { $0.kind == "text" && names.contains(($0.document?.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)) }
+        let hasHeader = onMonth.contains {
+            $0.kind == "text" && CompanionLayout.weekdayName(translating: ($0.document?.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines), to: "en") != nil
+        }
         if !hasHeader {
-            for h in CompanionLayout.weekdayHeader(mondayFirst: mondayFirst) {
+            for h in CompanionLayout.weekdayHeader(mondayFirst: mondayFirst, language: CompanionLayout.boardLanguage) {
                 let r = await call(["card-add", "--parent", monthId, "--text", h.text,
                                     "--x", Self.num(h.x), "--y", Self.num(h.y), "--format", "id"], background: true)
                 if !r.ok { ok = false }
@@ -497,6 +527,41 @@ extension CommandRunner {
         }
         if ok { companion.update(workspace) { $0.filledMonths.insert(title) } }
         Log.info("companion: \(title) \(ok ? "filled" : "partly filled") (\(missing.count) day boards created\(hasHeader ? "" : ", header added"))")
+    }
+
+    // MARK: Board language
+
+    /// Puts the weekday headers of every month board in the UI language after it changed
+    /// (System Settings; takes effect at launch): each header card whose text is a weekday in
+    /// the other language is `note-update`d in place, so position and size stay. Runs in the
+    /// background once Allume is up; the language is remembered only when every month board
+    /// was done, so a run that failed (Allume quit, CLI read-only) is repeated next time.
+    func relabelWeekdaysIfNeeded() {
+        let language = CompanionLayout.boardLanguage
+        guard CompanionSettings.headerLanguage != language, companion.relabel == nil else { return }
+        companion.relabel = Task { @MainActor in
+            defer { companion.relabel = nil }
+            let months = companion.allMonths
+            Log.info("companion: weekday headers \(CompanionSettings.headerLanguage) → \(language) on \(months.count) month board(s)")
+            let t0 = Date()
+            var ok = true, changed = 0
+            for (title, id) in months.sorted(by: { $0.key < $1.key }) {
+                guard let onMonth = await rows(of: id, background: true) else { ok = false; continue }
+                for row in onMonth where row.kind == "text" {
+                    let text = (row.document?.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard let doc = row.document?.id, let target = CompanionLayout.weekdayName(translating: text, to: language),
+                          target != text else { continue }
+                    if await call(["note-update", "--document-id", doc, "--body", target, "--format", "id"], background: true).ok {
+                        changed += 1
+                    } else {
+                        ok = false
+                        Log.info("companion: \(title) header \"\(text)\" not updated")
+                    }
+                }
+            }
+            if ok { CompanionSettings.headerLanguage = language }
+            Log.info("companion: \(changed) weekday header card(s) rewritten in \(Int(Date().timeIntervalSince(t0))) s\(ok ? "" : "; incomplete, will retry")")
+        }
     }
 
     // MARK: Projects

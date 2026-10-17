@@ -134,7 +134,10 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   和代码里不再有的（stale，可删）；英文直接改 JSON 或用 Xcode 打开 .xcstrings，英文复数用 plural variations（one / other）。
   同一个中文词要两种英文时用独立键 `String(localized: "section.commands", defaultValue: "命令")`（分组标题 Commands，行尾标签 Command）。
   星期标签 `DateWords.weekdayLabel` 是运行时键（周一…周日，目录里 manual），只用于显示；写进 Allume 的东西不翻译：日 / 月白板标题、
-  `@todo(due: …)`、月白板的「一 … 日」表头卡（`CompanionLayout.weekdayNames`）、`DateWords` 规则表（解析用）。`Log.info` 和测试钩子不翻译。
+  `@todo(due: …)`、`DateWords` 规则表（解析用）。例外是月白板的星期表头卡（`CompanionLayout.weekdayNames(_:)`，
+  一 … 日 / Mon … Sun，写死在代码里、不走字符串表）：跟 `boardLanguage` 走，语言变了在 Allume 运行起来时由
+  `relabelWeekdaysIfNeeded` 用 `note-update --document-id <卡片的 document.id>` 原地改写全部月白板（实测文字卡可用，frame 不变），
+  已写的语言记在 UserDefaults `companion.headerLanguage`（缺省 zh）。`Log.info` 和测试钩子不翻译。
   英文日期输入靠 `NSDataDetector`：`tomorrow` `Friday` `in 3 days` `Oct 20` `10-20` 能认，`next week` `end of month` 不认，
   `next tuesday` 算成下下周二（所以提示文案不用它）。测英文：`open -n build/AllumeCompanion.app --args -AppleLanguages '(en)'`，
   配上面的 `ALLUME_SNAPSHOT` / `ALLUME_SETTINGS_SNAPSHOT`；本机已经开着一份时 `-n` 另起一个，测完按 pid 杀掉自己那个。

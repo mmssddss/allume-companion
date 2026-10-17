@@ -126,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self.state.allumeRunning = info != nil
                 // The write-mode probe needs Allume up: ask once it is, until we know.
                 if info != nil, !wasRunning, self.state.setup.ready, self.state.cliWrite != .writable { self.probeWriteMode() }
+                if info != nil, !wasRunning, self.state.setup.ready { self.runner.relabelWeekdaysIfNeeded() }
                 if (info != nil) != wasRunning { self.settings.model.refresh() }
                 self.state.boardTitle = info?.title ?? ""
                 self.boardModel.allumeActive = info?.isActive ?? false
