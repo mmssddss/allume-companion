@@ -23,13 +23,15 @@ final class OverlayController {
     private var window: AllumeTracker.WindowInfo?
 
     static let panelSize = CGSize(width: 560, height: 400)
-    /// Height the view last asked for (search row + visible rows + footer).
-    private var contentHeight: CGFloat = panelSize.height
+    /// Height the view last asked for (search row + visible rows + footer). Requests that come
+    /// while the panel is hidden (or prewarming, alpha 0) are ignored: a hidden panel stays
+    /// collapsed, as `rearm` left it.
+    private var contentHeight: CGFloat = PanelMetrics.collapsed
     static let topInset: CGFloat = 52   // never higher than this below Allume's top edge
-    /// Height the panel had when it was last shown: it is centered in the Allume window at that
-    /// height, and later growth or shrinking only moves the bottom edge, so the search row
-    /// stays where the user's eyes already are.
-    private var anchorHeight: CGFloat = panelSize.height
+    /// The panel is placed as if it were this tall (its tallest, `PanelMetrics.maxHeight`),
+    /// centered in the Allume window: it opens with only the field and unfolds downwards, and
+    /// later growth or shrinking only moves the bottom edge, so the field never moves.
+    private let anchorHeight = PanelMetrics.maxHeight
 
     init(state: AppState, runner: CommandRunner) {
         self.state = state
@@ -56,9 +58,9 @@ final class OverlayController {
         NotificationCenter.default.addObserver(forName: .panelHeight, object: nil, queue: .main) { [weak self] note in
             guard let h = note.object as? CGFloat else { return }
             Task { @MainActor in
-                guard let self, self.contentHeight != h else { return }
+                guard let self, self.panel.isVisible, self.panel.alphaValue > 0, self.contentHeight != h else { return }
                 self.contentHeight = h
-                if self.panel.isVisible, let w = self.window {
+                if let w = self.window {
                     // Same duration and curve as the list inside (CommandPanelView.resizeAnimation),
                     // so the bottom edge and the rows move together instead of jumping.
                     NSAnimationContext.runAnimationGroup { ctx in
@@ -139,14 +141,13 @@ final class OverlayController {
         panel.setFrame(frame, display: panel.frame.size != frame.size)
     }
 
-    /// `expectedRows` sizes the first frame right away, so the panel does not pop up at the
+    /// `expectedHeight` sizes the first frame right away, so the panel does not pop up at the
     /// previous height and then jump once SwiftUI reports the real one. Usually `rearm` already
-    /// left the panel at that size with the field cleared, so this is one `orderFront`
-    /// (~5–10 ms); a relayout (~10–20 ms) only happens when the Allume window changed size.
-    func showPanel(expectedRows: Int? = nil) {
+    /// left the panel at the collapsed size (field only) with the field cleared, so this is one
+    /// `orderFront` (~5–10 ms); a relayout (~10–20 ms) only happens when the Allume window changed size.
+    func showPanel(expectedHeight: CGFloat? = nil) {
         guard let window else { return }
-        if let n = expectedRows { contentHeight = PanelMetrics.height(forRows: n) }
-        anchorHeight = contentHeight
+        if let h = expectedHeight { contentHeight = h }
         let t0 = Date()
         let frame = panelFrame(for: window.frame)
         var relaid = false
@@ -178,19 +179,18 @@ final class OverlayController {
         rearm()
     }
 
-    /// Puts the hidden panel into the state the next ⌘K wants: field cleared, every command
-    /// listed, frame at that height. Done now, while nobody is waiting, so `showPanel` has
-    /// nothing left to lay out (see its timings).
+    /// Puts the hidden panel into the state the next ⌘K wants: field cleared, list folded away
+    /// (it unfolds once the selection is known), frame at that height. Done now, while nobody
+    /// is waiting, so `showPanel` has nothing left to lay out (see its timings).
     private func rearm() {
         NotificationCenter.default.post(name: .panelReset, object: nil)
-        contentHeight = PanelMetrics.height(forRows: CommandCatalog.specs.count)
-        anchorHeight = contentHeight
+        contentHeight = PanelMetrics.collapsed
         if let w = window { panel.setFrame(panelFrame(for: w.frame), display: true) }
     }
 
     /// Anchored at the top (just under Allume's title bar), so growing or shrinking only moves
     /// the bottom edge; never taller than the space left in the Allume window.
-    /// Centered in the Allume window (at the height it opened with), clamped to stay below
+    /// Centered in the Allume window (at `anchorHeight`), clamped to stay below
     /// the title bar and inside the window.
     private func panelFrame(for w: CGRect) -> CGRect {
         let s = Self.panelSize

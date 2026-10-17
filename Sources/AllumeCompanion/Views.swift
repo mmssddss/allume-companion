@@ -28,12 +28,30 @@ enum PanelMetrics {
     static let resizeDuration: TimeInterval = 0.15
     static let searchRow: CGFloat = 62
     static let row: CGFloat = 46
+    /// A section title ("排列", "白板") above its rows.
+    static let header: CGFloat = 26
     static let listPadding: CGFloat = 16
     static let footer: CGFloat = 30
     static let maxRows = 8
-    static func height(forRows n: Int) -> CGFloat {
-        searchRow + 1 + CGFloat(max(1, min(n, maxRows))) * row + listPadding + footer
+    /// Taller lists scroll.
+    static let maxList = CGFloat(maxRows) * row
+    /// Field and footer only: the panel between ⌘K and the selection being known.
+    static let collapsed = searchRow + footer
+    static let maxHeight = height(list: maxList + listPadding)
+    /// The list's height for that many rows and section titles (0 = folded away).
+    static func listHeight(rows: Int, headers: Int) -> CGFloat {
+        min(CGFloat(max(1, rows)) * row + CGFloat(headers) * header, maxList) + listPadding
     }
+    static func height(list: CGFloat) -> CGFloat {
+        searchRow + (list > 0 ? 1 + list : 0) + footer
+    }
+}
+
+/// A run of rows under one title; `title` is nil for an untitled list (the navigation lists).
+struct PanelSection: Identifiable {
+    let id: String
+    let title: String?
+    var rows: [PanelRow]
 }
 
 /// One row of the panel, whatever list is showing: a command, a recently visited board, or a
@@ -50,7 +68,10 @@ struct PanelRow: Identifiable {
 }
 
 /// Spotlight-style command panel: a stack of the selected cards on the left, a command field,
-/// and the matching rows below. ↑/↓ pick, ⏎ runs, Esc or ⌘K closes. Two rows are not commands
+/// and the matching rows below, in titled sections. With an empty field the sections are the
+/// commands that fit the selection (none / one card / several / one sub-board), grouped by
+/// `CommandGroup`; typing ranks a "命令", a "白板" (BoardIndex) and a "待办" section against
+/// each other. Between ⌘K and the selection being known only the field shows. ↑/↓ pick, ⏎ runs, Esc or ⌘K closes. Two rows are not commands
 /// but lists ("最近去过", "全部待办"): ⏎ on them swaps the rows for that list (filtered by what
 /// is typed), ⏎ on a list row jumps to its board, Esc or ⌫ on an empty field comes back.
 struct CommandPanelView: View {
@@ -60,19 +81,76 @@ struct CommandPanelView: View {
     @State private var selectedIndex = 0
     @FocusState private var fieldFocused: Bool
 
+    private var context: SelectionContext {
+        let one = state.selectedCards.count == 1 ? state.selectedCards.first : nil
+        return SelectionContext(count: state.selectedCardIds.count,
+                                singleBoard: one?.kind == "subBoard" && one?.documentId != nil,
+                                canUndo: state.undoLabel != nil)
+    }
+
     private var matches: [CommandMatch] {
-        CommandCatalog.matches(for: query).filter { m in
-            !m.spec.needsSelection || !state.selectedCardIds.isEmpty || state.selectionPending
+        let ctx = context
+        return CommandCatalog.matches(for: query).filter { CommandCatalog.isAvailable($0.spec, in: ctx) }
+    }
+
+    /// Board and todo search results get at most this many rows each.
+    private static let searchLimit = 6
+
+    private var sections: [PanelSection] {
+        switch state.panelMode {
+        case .commands:
+            if state.selectionPending { return [] }
+            let trimmed = query.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty {
+                return CommandGroup.allCases.compactMap { g in
+                    let rows = matches.filter { $0.spec.group == g }.map(commandRow)
+                    return rows.isEmpty ? nil : PanelSection(id: "g\(g.rawValue)", title: g.title, rows: rows)
+                }
+            }
+            return searchSections(trimmed)
+        case .recentBoards: return [PanelSection(id: "list", title: nil, rows: filtered(state.recentBoards.map(boardRow)))]
+        case .allTodos: return [PanelSection(id: "list", title: nil, rows: filtered(state.todos.map(todoRow)))]
+        case .addTodo: return [PanelSection(id: "list", title: nil, rows: addTodoRows)]
         }
     }
 
-    private var rows: [PanelRow] {
-        switch state.panelMode {
-        case .commands: return matches.map(commandRow)
-        case .recentBoards: return filtered(state.recentBoards.map(boardRow))
-        case .allTodos: return filtered(state.todos.map(todoRow))
-        case .addTodo: return addTodoRows
+    /// Typing: commands, boards and todos, each section ranked by how well its best row
+    /// matches (per-word, same 4…1 scale); ties keep that order.
+    private func searchSections(_ q: String) -> [PanelSection] {
+        var ranked: [(score: Double, section: PanelSection)] = []
+        let cmds = matches
+        if let best = cmds.first {
+            let words = max(1, CommandCatalog.normalizedWords(q).count)
+            ranked.append((Double(best.score) / Double(words), PanelSection(id: "cmd", title: "命令", rows: cmds.map(commandRow))))
         }
+        let boards = state.boards
+            .map { (b: $0, s: CommandCatalog.textScore(q, $0.title)) }
+            .filter { $0.s > 0 }
+            .sorted { $0.s != $1.s ? $0.s > $1.s : $0.b.lastSeen > $1.b.lastSeen }
+            .prefix(Self.searchLimit)
+        if let best = boards.first {
+            ranked.append((Double(best.s), PanelSection(id: "boards", title: "白板", rows: boards.map { searchBoardRow($0.b) })))
+        }
+        let todos = state.todos
+            .map { (t: $0, s: CommandCatalog.textScore(q, $0.label)) }
+            .filter { $0.s > 0 }
+            .sorted { $0.s > $1.s } // stable: due order within a score
+            .prefix(Self.searchLimit)
+        if let best = todos.first {
+            ranked.append((Double(best.s), PanelSection(id: "todos", title: "待办", rows: todos.map { todoRow($0.t, idPrefix: "t:") })))
+        }
+        return ranked.enumerated()
+            .sorted { $0.element.score != $1.element.score ? $0.element.score > $1.element.score : $0.offset < $1.offset }
+            .map(\.element.section)
+    }
+
+    private var rows: [PanelRow] { sections.flatMap(\.rows) }
+
+    /// Folded away (0) while the selection is being read; otherwise rows plus section titles.
+    private var listHeight: CGFloat {
+        if state.panelMode == .commands && state.selectionPending { return 0 }
+        let s = sections
+        return PanelMetrics.listHeight(rows: s.reduce(0) { $0 + $1.rows.count }, headers: s.filter { $0.title != nil }.count)
     }
 
     /// The "添加待办" field's rows: first what ⏎ adds (the exact body that will be written, the
@@ -132,8 +210,14 @@ struct CommandPanelView: View {
         } else if case .allTodos = m.kind {
             let due = state.todos.filter { ($0.daysLeft() ?? 1) <= 0 }.count
             hint = state.todos.isEmpty ? "没有正文以 @todo 开头的卡" : "\(state.todos.count) 条" + (due > 0 ? "，\(due) 条已到期" : "")
+        } else if case .undo = m.kind, let label = state.undoLabel {
+            hint = "撤回「\(label)」（Allume 自己的 ⌘Z 撤不掉 CLI 做的事）"
         }
-        return PanelRow(id: m.id, symbol: m.spec.symbol, title: m.title, hint: hint) {
+        var title = m.title
+        if case .openSelectedBoard = m.kind, let card = state.selectedCards.first, !card.title.isEmpty {
+            title = "打开「\(card.title)」"
+        }
+        return PanelRow(id: m.id, symbol: m.spec.symbol, title: title, hint: hint) {
             switch m.kind {
             case .recentBoards: state.panelMode = .recentBoards
             case .allTodos: state.panelMode = .allTodos
@@ -150,9 +234,18 @@ struct CommandPanelView: View {
         }
     }
 
-    private func todoRow(_ t: TodoItem) -> PanelRow {
+    private func searchBoardRow(_ b: BoardRef) -> PanelRow {
+        PanelRow(id: "b:" + b.id, symbol: "rectangle.on.rectangle", title: b.title.isEmpty ? "（无标题白板）" : b.title,
+                 hint: b.path.isEmpty ? "workspace 首页" : b.path) {
+            Task { await runner.openBoard(id: b.id, title: b.title) }
+        }
+    }
+
+    private func todoRow(_ t: TodoItem) -> PanelRow { todoRow(t, idPrefix: "") }
+
+    private func todoRow(_ t: TodoItem, idPrefix: String) -> PanelRow {
         let days = t.daysLeft()
-        return PanelRow(id: t.cardId, symbol: (days ?? 1) <= 0 ? "exclamationmark.circle" : "circle",
+        return PanelRow(id: idPrefix + t.cardId, symbol: (days ?? 1) <= 0 ? "exclamationmark.circle" : "circle",
                         title: t.label, hint: "白板：\(t.boardTitle)",
                         trailing: t.dueLabel, trailingIsUrgent: (days ?? 1) <= 0) {
             Task { await runner.openBoard(id: t.boardId, title: t.boardTitle) }
@@ -162,8 +255,10 @@ struct CommandPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             searchRow
-            Divider()
-            results
+            if listHeight > 0 {
+                Divider()
+                results
+            }
             footer
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -173,6 +268,7 @@ struct CommandPanelView: View {
             if !query.isEmpty { query = "" }
             if selectedIndex != 0 { selectedIndex = 0 }
             fieldFocused = true
+            postHeight() // a preset selection (test hook) never changes `listHeight` on its own
         }
         .onReceive(NotificationCenter.default.publisher(for: .panelReset)) { _ in
             if !query.isEmpty { query = "" }
@@ -185,11 +281,11 @@ struct CommandPanelView: View {
         .onChange(of: query) { _, _ in selectedIndex = 0; autoReplaceDate() }
         .onChange(of: state.panelMode) { _, _ in query = ""; selectedIndex = 0; fieldFocused = true }
         .onAppear { postHeight() }
-        .onChange(of: rows.count) { _, _ in postHeight() }
+        .onChange(of: listHeight) { _, _ in postHeight() }
     }
 
     private func postHeight() {
-        NotificationCenter.default.post(name: .panelHeight, object: PanelMetrics.height(forRows: rows.count))
+        NotificationCenter.default.post(name: .panelHeight, object: PanelMetrics.height(list: listHeight))
     }
 
     /// On macOS 26 the Liquid Glass is the panel's NSGlassEffectView (OverlayController), so
@@ -260,7 +356,10 @@ struct CommandPanelView: View {
         case .recentBoards: return "筛选最近去过的白板…"
         case .allTodos: return "筛选待办…"
         case .addTodo: return "待办内容，加个日期：下周二 交房租"
-        case .commands: return state.selectedCardIds.isEmpty ? "输入命令…" : "对 \(state.selectedCardIds.count) 张卡做什么？排列、大小、撤销…"
+        case .commands:
+            if state.selectedCardIds.isEmpty { return "输入命令、白板或待办…" }
+            if state.selectedCardIds.count == 1, let t = state.selectedCards.first?.title, !t.isEmpty { return "对「\(t)」做什么？" }
+            return "对 \(state.selectedCardIds.count) 张卡做什么？排列、大小…"
         }
     }
 
@@ -268,36 +367,57 @@ struct CommandPanelView: View {
 
     private var emptyText: String {
         switch state.panelMode {
-        case .commands: return "没有匹配的命令"
+        case .commands: return "没有匹配的命令、白板或待办"
         case .recentBoards: return state.recentBoards.isEmpty ? "还没有足迹：切换白板时会记下来" : "没有匹配的白板"
         case .allTodos: return state.todos.isEmpty ? "没有待办：正文第一行写 @todo 的文字卡会出现在这里" : "没有匹配的待办"
         case .addTodo: return ""
         }
     }
 
-    /// The only scrolling part: at most `maxRows` rows are visible, the selected row is kept in view.
+    /// The only scrolling part: at most `maxList` tall, the selected row (or, for the first row
+    /// of a section, its title) is kept in view.
     private var results: some View {
-        ScrollViewReader { proxy in
+        let sections = self.sections
+        // Index (in `rows`) of each section's first row.
+        let firstIndex = sections.reduce(into: [Int]()) { acc, sec in
+            acc.append(acc.isEmpty ? 0 : acc.last! + sections[acc.count - 1].rows.count)
+        }
+        return ScrollViewReader { proxy in
             ScrollView(.vertical) {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    if rows.isEmpty {
+                    if sections.allSatisfy({ $0.rows.isEmpty }) {
                         Text(emptyText).foregroundStyle(.tertiary)
                             .padding(.horizontal, 10).frame(height: PanelMetrics.row)
                     }
-                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, r in
-                        ResultRow(row: r, selected: i == selectedIndex)
-                            .frame(height: PanelMetrics.row)
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectedIndex = i; runSelected() }
-                            .id(r.id)
+                    ForEach(Array(sections.enumerated()), id: \.element.id) { si, section in
+                        if let title = section.title {
+                            Text(title).font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                                .padding(.horizontal, 10).padding(.top, 6)
+                                .frame(height: PanelMetrics.header, alignment: .leading)
+                                .id("h:" + section.id)
+                        }
+                        ForEach(Array(section.rows.enumerated()), id: \.element.id) { ri, r in
+                            let i = firstIndex[si] + ri
+                            ResultRow(row: r, selected: i == selectedIndex)
+                                .frame(height: PanelMetrics.row)
+                                .contentShape(Rectangle())
+                                .onTapGesture { selectedIndex = i; runSelected() }
+                                .id(r.id)
+                        }
                     }
                 }
                 .padding(8)
             }
-            .frame(height: CGFloat(max(1, min(rows.count, PanelMetrics.maxRows))) * PanelMetrics.row + PanelMetrics.listPadding)
-            .animation(.easeOut(duration: PanelMetrics.resizeDuration), value: rows.count)
+            .frame(height: listHeight)
+            .animation(.easeOut(duration: PanelMetrics.resizeDuration), value: listHeight)
             .onChange(of: selectedIndex) { _, i in
-                if rows.indices.contains(i) { proxy.scrollTo(rows[i].id, anchor: nil) }
+                guard let si = firstIndex.lastIndex(where: { $0 <= i }), sections.indices.contains(si) else { return }
+                let section = sections[si]
+                if i == firstIndex[si], section.title != nil {
+                    proxy.scrollTo("h:" + section.id, anchor: nil)
+                } else if section.rows.indices.contains(i - firstIndex[si]) {
+                    proxy.scrollTo(section.rows[i - firstIndex[si]].id, anchor: nil)
+                }
             }
         }
     }

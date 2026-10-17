@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reminders = DueReminders()
         state.recentBoards = trail.recent(excluding: nil)
         state.todos = todoIndex.sorted
+        state.boards = boardIndex.refs
         boardModel.onSwitched = { [weak self] id, title in
             guard let self else { return }
             self.trail.record(boardId: id, title: title)
@@ -62,6 +63,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         boardIndex.onCrawled = { [weak self] in
             afterCrawl?()
             guard let self else { return }
+            self.state.boards = self.boardIndex.refs
             self.todoIndex.refresh(index: self.boardIndex, reason: "index crawled")
         }
         todoTimer = Timer.scheduledTimer(withTimeInterval: TodoIndex.interval, repeats: true) { [weak self] _ in
@@ -255,8 +257,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Selection
 
-    /// ⌘K: the panel goes up first (a few ms), then the clipboard round trip fills in the
-    /// selection; a timeout (nothing selected) therefore no longer delays the panel by 300 ms.
+    /// ⌘K: the panel goes up first (a few ms) with only its field, then the clipboard round trip
+    /// fills in the selection and the list unfolds once (30–110 ms with cards selected,
+    /// `SelectionReader.timeout` without).
     func readSelectionAndShow() {
         Task { @MainActor in
             var stats = HotKeyStats()
@@ -265,7 +268,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             state.selectedCards = []
             tracker.refresh()   // 1–2 ms: the AX round trip is not where ⌘K's time goes
             overlay.update(window: tracker.currentWindow())
-            overlay.showPanel(expectedRows: CommandCatalog.specs.count)
+            overlay.showPanel(expectedHeight: PanelMetrics.collapsed)
             stats.panelShown()
             do {
                 let cards = try await SelectionReader.capture(pid: tracker.pid)
@@ -280,13 +283,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 state.appendLog("读取选中失败：\(error.localizedDescription)")
                 Log.info("selection failed after \(Int(Date().timeIntervalSince(stats.t0) * 1000)) ms: \(error.localizedDescription)")
             }
+            // Which commands are listed depends on the cards' kinds (one sub-board → 打开). The
+            // board model usually has them, with no CLI call: describe first, then unfold the list
+            // once. Otherwise unfold now and let the description catch up.
+            let fromModel = boardModel.lookup(state.selectedCardIds) != nil
+            if fromModel { await runner.describeSelection() }
             state.selectionPending = false
             // The panel is one of the model's refresh points; it runs alongside describing
             // the selection (which uses the model as it is now) and re-describes once done.
             // Boards the selection is on besides the current one are reloaded afterwards, so
             // a selection inside an inline sub-board is also fresh for the undo snapshot.
             Task { await boardModel.refresh(reason: "panel opened") }
-            await runner.describeSelection()
+            if !fromModel { await runner.describeSelection() }
             stats.described(state.selectedCards)
             await boardModel.refreshOthers(containing: state.selectedCardIds, reason: "panel opened")
         }

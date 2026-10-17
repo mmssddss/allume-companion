@@ -31,6 +31,43 @@ enum CommandKind: Equatable {
     case home
     /// Switches the panel into a text field whose ⏎ sticks a @todo card on the current board.
     case addTodo
+    /// Jump into the one selected sub-board card.
+    case openSelectedBoard
+}
+
+/// The panel's sections, in the order they are listed with an empty field: what can be done to
+/// the selection first (absent when nothing is selected), then the always-there rows.
+enum CommandGroup: Int, CaseIterable {
+    case board, arrange, size, navigate, create, edit
+
+    var title: String {
+        switch self {
+        case .board: return "这块白板"
+        case .arrange: return "排列"
+        case .size: return "大小"
+        case .navigate: return "导航"
+        case .create: return "新建"
+        case .edit: return "编辑"
+        }
+    }
+}
+
+/// What a command needs to be listed at all.
+enum CommandNeeds: Equatable {
+    case nothing
+    /// At least this many selected cards (arranging one card means nothing).
+    case cards(Int)
+    /// Exactly one selected card, and it is a sub-board.
+    case oneBoard
+    /// A step the runner can undo.
+    case undoStep
+}
+
+/// What ⌘C found, as far as listing commands goes.
+struct SelectionContext: Equatable {
+    var count = 0
+    var singleBoard = false
+    var canUndo = false
 }
 
 struct CommandSpec {
@@ -39,7 +76,8 @@ struct CommandSpec {
     let hint: String
     let symbol: String         // SF Symbol name
     let aliases: [String]      // lowercase; Chinese, English, pinyin
-    let needsSelection: Bool
+    let group: CommandGroup
+    let needs: CommandNeeds
     let build: (ParsedArgs) -> CommandKind
     let display: (ParsedArgs) -> String
 }
@@ -67,78 +105,109 @@ enum CommandCatalog {
         ("小", 160, 120), ("中", 200, 150), ("大", 280, 210),
     ]
 
-    /// The navigation rows sit first, always: ⌘K ⏎ is "最近去过", ⌘K ↓ ⏎ is "全部待办",
-    /// ⌘K ↓↓ ⏎ is "回首页", ⌘K ↓↓↓ ⏎ is "添加待办", whatever is selected, so they can be hit from muscle memory. Their hints are filled in
-    /// live by the panel (last board, number of todos).
+    /// Catalog order is the tie-break when typing. With an empty field the panel lists the
+    /// available commands by `group` (CommandGroup order): with nothing selected that is
+    /// ⌘K ⏎ "最近去过", ⌘K ↓ ⏎ "全部待办", ⌘K ↓↓ ⏎ "回首页", ⌘K ↓↓↓ ⏎ "添加待办"; with cards
+    /// selected their commands come first. Hints of the navigation rows are filled in live by
+    /// the panel (last board, number of todos).
     static let specs: [CommandSpec] = [
         CommandSpec(id: "recent", title: "最近去过", hint: "回到之前看过的白板",
                     symbol: "clock.arrow.circlepath",
                     aliases: ["最近", "去过", "足迹", "回去", "历史", "刚才", "recent", "back", "history", "visited", "zuijin", "zuji"],
-                    needsSelection: false,
+                    group: .navigate, needs: .nothing,
                     build: { _ in .recentBoards },
                     display: { _ in "最近去过" }),
         CommandSpec(id: "todos", title: "全部待办", hint: "所有白板上正文以 @todo 开头的卡",
                     symbol: "checklist",
                     aliases: ["待办", "todo", "todos", "任务", "到期", "截止", "过期", "@todo", "tasks", "due", "daiban", "renwu"],
-                    needsSelection: false,
+                    group: .navigate, needs: .nothing,
                     build: { _ in .allTodos },
                     display: { _ in "全部待办" }),
         CommandSpec(id: "home", title: "回首页", hint: "跳到当前 workspace 的首页（最顶层白板）",
                     symbol: "house",
                     aliases: ["回首页", "首页", "主页", "顶层", "根", "home", "root", "top", "shouye", "zhuye"],
-                    needsSelection: false,
+                    group: .navigate, needs: .nothing,
                     build: { _ in .home },
                     display: { _ in "回首页" }),
         CommandSpec(id: "add-todo", title: "添加待办", hint: "在当前白板眼前的空位贴一张 @todo 文字卡",
                     symbol: "plus.circle",
                     aliases: ["添加待办", "加待办", "新待办", "新建待办", "记待办", "添加", "新建", "便签", "贴",
                               "add", "new", "addtodo", "note", "tianjia", "jiadaiban", "xinjian"],
-                    needsSelection: false,
+                    group: .create, needs: .nothing,
                     build: { _ in .addTodo },
                     display: { _ in "添加待办" }),
+        CommandSpec(id: "open-board", title: "打开白板", hint: "进入选中的这块白板",
+                    symbol: "arrow.right.square",
+                    aliases: ["打开", "进入", "进去", "跳转", "open", "enter", "go", "dakai", "jinru"],
+                    group: .board, needs: .oneBoard,
+                    build: { _ in .openSelectedBoard },
+                    display: { _ in "打开白板" }),
         CommandSpec(id: "grid", title: "排成 N 列", hint: "网格，锚在选中区域左上角，可加数字：grid 4 / 排成4列",
                     symbol: "square.grid.3x3",
                     aliases: ["排成", "排列", "整理", "网格", "列", "grid", "arrange", "columns", "sort", "tidy", "pailie", "wangge", "zhengli"],
-                    needsSelection: true,
+                    group: .arrange, needs: .cards(2),
                     build: { .gather(layout: "grid", columns: $0.number ?? defaultColumns, order: $0.order) },
                     display: { "排成 \($0.number ?? defaultColumns) 列" + orderSuffix($0) }),
         CommandSpec(id: "row", title: "排成一行", hint: "横向排成一行",
                     symbol: "rectangle.split.3x1",
                     aliases: ["一行", "横排", "横向", "行", "row", "horizontal", "yihang", "hengpai"],
-                    needsSelection: true,
+                    group: .arrange, needs: .cards(2),
                     build: { .gather(layout: "row", columns: 0, order: $0.order) },
                     display: { "排成一行" + orderSuffix($0) }),
         CommandSpec(id: "column", title: "排成一列", hint: "纵向排成一列",
                     symbol: "rectangle.split.1x2",
                     aliases: ["一列", "竖排", "纵向", "column", "vertical", "stack", "yilie", "shupai"],
-                    needsSelection: true,
+                    group: .arrange, needs: .cards(2),
                     build: { .gather(layout: "column", columns: 0, order: $0.order) },
                     display: { "排成一列" + orderSuffix($0) }),
         CommandSpec(id: "size-medium", title: "统一大小：中", hint: "200×150（Allume 默认大小）",
                     symbol: "square.resize",
                     aliases: ["统一", "大小", "尺寸", "中", "中等", "一样大", "同样大", "size", "same", "medium", "normal", "tongyi", "daxiao", "zhong"],
-                    needsSelection: true,
+                    group: .size, needs: .cards(1),
                     build: { _ in .resize(width: sizes[1].width, height: sizes[1].height) },
                     display: { _ in "统一大小：中" }),
         CommandSpec(id: "size-small", title: "统一大小：小", hint: "160×120",
                     symbol: "arrow.down.right.and.arrow.up.left",
                     aliases: ["小", "缩小", "减小", "变小", "small", "smaller", "shrink", "xiao", "suoxiao"],
-                    needsSelection: true,
+                    group: .size, needs: .cards(1),
                     build: { _ in .resize(width: sizes[0].width, height: sizes[0].height) },
                     display: { _ in "统一大小：小" }),
         CommandSpec(id: "size-large", title: "统一大小：大", hint: "280×210",
                     symbol: "arrow.up.left.and.arrow.down.right",
                     aliases: ["大", "放大", "变大", "增大", "large", "big", "bigger", "enlarge", "da", "fangda"],
-                    needsSelection: true,
+                    group: .size, needs: .cards(1),
                     build: { _ in .resize(width: sizes[2].width, height: sizes[2].height) },
                     display: { _ in "统一大小：大" }),
         CommandSpec(id: "undo", title: "撤销", hint: "撤销上一步（Allume 自己的 ⌘Z 撤不掉 CLI 做的事）",
                     symbol: "arrow.uturn.backward",
                     aliases: ["撤销", "撤回", "回退", "还原", "undo", "revert", "back", "chexiao", "huitui"],
-                    needsSelection: false,
+                    group: .edit, needs: .undoStep,
                     build: { _ in .undo },
                     display: { _ in "撤销" }),
     ]
+
+    static func isAvailable(_ spec: CommandSpec, in context: SelectionContext) -> Bool {
+        switch spec.needs {
+        case .nothing: return true
+        case .cards(let n): return context.count >= n
+        case .oneBoard: return context.count == 1 && context.singleBoard
+        case .undoStep: return context.canUndo
+        }
+    }
+
+    /// How well `text` (a board title, a todo) matches what is typed: 4 = equal, 3 = prefix,
+    /// 2 = contains, 1 = every space-separated word is in it, 0 = no match. Same scale as the
+    /// per-word command scores, so sections can be ranked against each other.
+    static func textScore(_ query: String, _ text: String) -> Int {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let t = text.lowercased()
+        guard !q.isEmpty, !t.isEmpty else { return 0 }
+        if t == q { return 4 }
+        if t.hasPrefix(q) { return 3 }
+        if t.contains(q) { return 2 }
+        let words = q.split(separator: " ")
+        return words.count > 1 && words.allSatisfy { t.contains($0) } ? 1 : 0
+    }
 
     static func orderSuffix(_ args: ParsedArgs) -> String {
         args.order.label.map { "（\($0)）" } ?? ""

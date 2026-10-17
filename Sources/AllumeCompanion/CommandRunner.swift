@@ -209,6 +209,9 @@ final class CommandRunner {
         case .resize(let w, let h): await resizeAll(width: w, height: h)
         case .undo: await undo()
         case .home: await goHome()
+        case .openSelectedBoard:
+            guard let card = state.selectedCards.first, let id = card.documentId else { return }
+            await openBoard(id: id, title: card.title)
         case .recentBoards, .allTodos, .addTodo: break // modes of the panel view itself
         }
     }

@@ -10,12 +10,13 @@ import Foundation
 ///
 /// Flow: snapshot the pasteboard → post ⌘C to Allume's pid → wait for changeCount to move
 /// (≤ `timeout`) → parse → restore the snapshot. Measured: Allume writes 30–110 ms after the
-/// ⌘C. If it is slower than `timeout` (a huge board, a busy machine), the wait gives up but
+/// ⌘C, so `timeout` is about twice that; with nothing selected it is how long the panel's list
+/// waits to unfold. If Allume is slower (a huge board, a busy machine), the wait gives up but
 /// keeps watching for `lateWatch` more: a late write is then still parsed, the user's clipboard
 /// still restored, and the cards delivered through `onLateSelection`.
 enum SelectionReader {
     static let cardType = NSPasteboard.PasteboardType("com.allume.copyable.card")
-    static let timeout: TimeInterval = 0.4
+    static let timeout: TimeInterval = 0.2
     static let lateWatch: TimeInterval = 1.5
     /// Cards that arrived after `capture` had already thrown `.timeout` (main actor).
     @MainActor static var onLateSelection: (([Card]) -> Void)?

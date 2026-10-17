@@ -78,7 +78,12 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   `available` 挡住）。通知权限：用户在系统设置里（而不是首次弹窗里）打开后，macOS 26/27 的 `authorizationStatus` 仍是 1（denied），
   但 `alertSetting` 是 enabled 且 `add` 成功，所以判断权限要看 `alertSetting`；`schedule` 每次现查，设置里打开后下次扫描就生效。
   菜单"发一条测试通知"直接投一条并记日志（`ALLUME_USR2=test-notification` + `kill -USR2` 同效）。
-  面板里这两行加"回首页""添加待办"永远排最前（`CommandCatalog.specs` 前四个），面板模式在 `AppState.panelMode`，Esc 在列表里是返回不是关闭。
+  面板模式在 `AppState.panelMode`，Esc 在列表里是返回不是关闭。
+- 面板列表（README "命令面板"）：⌘K 时 `selectionPending` 为真，只显示输入框（`PanelMetrics.collapsed`），⌘C 有结果
+  （卡在模型里时连描述一起）后才一次展开，所以列表在打开时只变一次高。空输入按 `CommandGroup` 分组、按 `CommandSpec.needs`
+  过滤（没选中 / 一张 / 多张 / 一张子白板）；打字时是命令、白板（`AppState.boards` ← `BoardIndex.refs`）、待办三组按最好匹配排序。
+  面板按最高高度（`PanelMetrics.maxHeight`）居中，只往下展开；隐藏时 OverlayController 忽略 `panelHeight`，保持折叠。
+  测各场景：`ALLUME_SELECT_IDS=","`（空选中）/ 一张子白板 id / 多张 id，配 `ALLUME_SNAPSHOT`；打字用 `ALLUME_USR2="type:…"`。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。
 - 图标：`Resources/AppIcon.icon`（Icon Composer 格式）由 build-app.sh 里的 `xcrun actool … --app-icon AppIcon` 编成
   Assets.car + AppIcon.icns。`icon.json` 的 `groups` **第一个在最上层**（和 Icon Composer 界面一致）。想看系统真正渲染的

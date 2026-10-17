@@ -18,6 +18,14 @@ struct CardSummary: Identifiable, Equatable {
     }
 }
 
+/// A board the panel can jump to by typing its title; `path` is where it sits ("首页 › 项目 A").
+struct BoardRef: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let path: String
+    let lastSeen: Date
+}
+
 /// Shared observable state for the overlay views.
 @MainActor
 final class AppState: ObservableObject {
@@ -25,8 +33,9 @@ final class AppState: ObservableObject {
     @Published var allumeRunning = false
     @Published var boardTitle = ""
     @Published var selectedCardIds: [String] = []
-    /// True between ⌘K and the clipboard answer: the panel is already up and lists every
-    /// command as if cards were selected, so it never waits for Allume.
+    /// True between ⌘K and the clipboard answer (and, when the board model has the cards,
+    /// their description): the panel shows only its field, so typing can start, and the list
+    /// unfolds once, with the commands for what turned out to be selected.
     @Published var selectionPending = false
     /// True when `selectedCardIds` came from Allume via ⌘C (so the cards are on the current
     /// board); false for the `ALLUME_SELECT_IDS` test preset, which may name cards anywhere.
@@ -52,6 +61,8 @@ final class AppState: ObservableObject {
     @Published var recentBoards: [VisitTrail.Visit] = []
     /// Every @todo card in the workspace, due first (TodoIndex.sorted).
     @Published var todos: [TodoItem] = []
+    /// Every board BoardIndex knows, for the "白板" section when typing in the panel.
+    @Published var boards: [BoardRef] = []
     /// Set by AppDelegate: closes the panel (a jump command leaves it).
     var requestHidePanel: (() -> Void)?
 

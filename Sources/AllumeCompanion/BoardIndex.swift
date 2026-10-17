@@ -60,6 +60,20 @@ final class BoardIndex {
 
     func parentId(of id: String) -> String? { entries.first { $0.id == id }?.parentId }
 
+    /// Every board with the titles of the boards above it (root first), for the panel's search.
+    var refs: [BoardRef] {
+        let byId = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return entries.map { e in
+            var path: [String] = []
+            var up = e.parentId
+            while let id = up, let p = byId[id], path.count < 6 {
+                path.insert(p.title.isEmpty ? "（无标题）" : p.title, at: 0)
+                up = p.parentId
+            }
+            return BoardRef(id: e.id, title: e.title, path: path.joined(separator: " › "), lastSeen: e.lastSeen)
+        }
+    }
+
     /// Marks `id` as the board we just confirmed the user is on (it wins future ties).
     func touch(_ id: String) {
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }
