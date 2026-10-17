@@ -139,10 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     stats.panelShown()
                     // `ALLUME_SNAPSHOT=/path.png` also writes a rendering of the panel there
                     // (screencapture needs Screen Recording; this does not).
-                    // `ALLUME_PANEL_MODE=todos|recent` opens straight into that list.
+                    // `ALLUME_PANEL_MODE=todos|recent|add` opens straight into that list (or the todo field).
                     switch env["ALLUME_PANEL_MODE"] {
                     case "todos": self.state.panelMode = .allTodos
                     case "recent": self.state.panelMode = .recentBoards
+                    case "add": self.state.panelMode = .addTodo
                     default: break
                     }
                     if let path = env["ALLUME_SNAPSHOT"], !path.isEmpty {
@@ -171,7 +172,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Test hook: SIGUSR2 runs a panel command on the current selection, like clicking its button.
         // `ALLUME_USR2` is a command query exactly as one would type it in the panel
-        // ("grid 4", "resize 300x200", "一行", "undo"); default "排成 3 列". `open:<board id>` jumps there.
+        // ("grid 4", "resize 300x200", "一行", "undo"); default "排成 3 列". `open:<board id>` jumps there;
+        // `todo:<text>` adds a todo to the current board.
         signal(SIGUSR2, SIG_IGN)
         usr2Source = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
         usr2Source?.setEventHandler { [weak self] in
@@ -182,6 +184,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 let query = env["ALLUME_USR2"] ?? "排成 3 列"
                 if query == "test-notification" { self.reminders.sendTest(); return }
+                if query.hasPrefix("todo:") {
+                    await self.runner.addTodo(String(query.dropFirst(5)))
+                    Log.info("panel log:\n" + self.state.log); return
+                }
                 if query.hasPrefix("open:") {
                     await self.runner.openBoard(id: String(query.dropFirst(5)), title: "test")
                     Log.info("panel log:\n" + self.state.log); return
@@ -312,6 +318,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "最近去过…", action: #selector(menuRecent), keyEquivalent: "")
         menu.addItem(withTitle: "全部待办…", action: #selector(menuTodos), keyEquivalent: "")
         menu.addItem(withTitle: "回首页", action: #selector(menuHome), keyEquivalent: "")
+        menu.addItem(withTitle: "添加待办…", action: #selector(menuAddTodo), keyEquivalent: "")
         menu.addItem(withTitle: "重新扫描待办", action: #selector(menuRescan), keyEquivalent: "")
         menu.addItem(withTitle: "发一条测试通知", action: #selector(menuTestNotification), keyEquivalent: "")
         menu.addItem(withTitle: "打开辅助功能设置…", action: #selector(openAXSettings), keyEquivalent: "")
@@ -324,6 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuRead() { readSelectionAndShow() }
     @objc private func menuRecent() { state.panelMode = .recentBoards; readSelectionAndShow() }
     @objc private func menuTodos() { state.panelMode = .allTodos; readSelectionAndShow() }
+    @objc private func menuAddTodo() { state.panelMode = .addTodo; readSelectionAndShow() }
     @objc private func menuHome() { Task { await runner.goHome() } }
     @objc private func menuRescan() { todoIndex.refresh(index: boardIndex, reason: "menu") }
     @objc private func menuTestNotification() { reminders.sendTest() }

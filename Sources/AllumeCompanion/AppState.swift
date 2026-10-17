@@ -44,8 +44,9 @@ final class AppState: ObservableObject {
     @Published var columns = 3
     /// Name of the step the "撤销" button would revert; nil when there is nothing to undo.
     @Published var undoLabel: String?
-    /// Which list the panel shows: the commands, or one of the two navigation lists.
-    enum PanelMode: Equatable { case commands, recentBoards, allTodos }
+    /// Which list the panel shows: the commands, one of the two navigation lists, or the
+    /// "添加待办" text field.
+    enum PanelMode: Equatable { case commands, recentBoards, allTodos, addTodo }
     @Published var panelMode: PanelMode = .commands
     /// Boards visited, most recent first, without the current one (VisitTrail; refreshed on switch).
     @Published var recentBoards: [VisitTrail.Visit] = []

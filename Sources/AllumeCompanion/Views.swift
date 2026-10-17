@@ -69,6 +69,22 @@ struct CommandPanelView: View {
         case .commands: return matches.map(commandRow)
         case .recentBoards: return filtered(state.recentBoards.map(boardRow))
         case .allTodos: return filtered(state.todos.map(todoRow))
+        case .addTodo: return [addTodoRow]
+        }
+    }
+
+    /// The one row of the "添加待办" field: what will be added, where, and when it is due.
+    private var addTodoRow: PanelRow {
+        let raw = query // runSelected clears the field before the row runs
+        let draft = TodoDraft.parse(raw)
+        let board = runner.boardModel?.title ?? state.boardTitle
+        let place = board.isEmpty ? "当前白板" : "「\(board)」"
+        return PanelRow(id: "add-todo", symbol: "plus.circle",
+                        title: draft.text.isEmpty ? "输入待办内容" : draft.text,
+                        hint: draft.text.isEmpty ? "⏎ 贴到\(place)；末尾加日期设到期：明天 / 10-20 / 2026-10-20" : "⏎ 贴到\(place)",
+                        trailing: draft.due.map { "到期 \($0)" }) {
+            guard !draft.text.isEmpty else { return }
+            Task { await runner.addTodo(raw) }
         }
     }
 
@@ -90,6 +106,7 @@ struct CommandPanelView: View {
             switch m.kind {
             case .recentBoards: state.panelMode = .recentBoards
             case .allTodos: state.panelMode = .allTodos
+            case .addTodo: state.panelMode = .addTodo
             default: Task { await runner.run(m.kind) }
             }
         }
@@ -157,7 +174,7 @@ struct CommandPanelView: View {
     private var searchRow: some View {
         HStack(spacing: 12) {
             if state.panelMode != .commands {
-                Image(systemName: state.panelMode == .allTodos ? "checklist" : "clock.arrow.circlepath")
+                Image(systemName: modeSymbol)
                     .font(.system(size: 18)).foregroundStyle(.secondary)
             } else if !state.selectedCardIds.isEmpty {
                 CardStackView(cards: state.selectedCards, count: state.selectedCardIds.count)
@@ -183,12 +200,29 @@ struct CommandPanelView: View {
         .frame(height: PanelMetrics.searchRow)
     }
 
+    private var footerKeys: String {
+        switch state.panelMode {
+        case .commands: return "↑↓ 选择 · ⏎ 执行 · Esc 关闭"
+        case .addTodo: return "⏎ 添加 · Esc 返回"
+        default: return "↑↓ 选择 · ⏎ 跳转 · Esc 返回"
+        }
+    }
+
+    private var modeSymbol: String {
+        switch state.panelMode {
+        case .allTodos: return "checklist"
+        case .addTodo: return "plus.circle"
+        default: return "clock.arrow.circlepath"
+        }
+    }
+
     /// With nothing selected the field just invites a command; the reason nothing was read
     /// (timeout, no Allume…) goes to the log, not in the user's face.
     private var placeholder: String {
         switch state.panelMode {
         case .recentBoards: return "筛选最近去过的白板…"
         case .allTodos: return "筛选待办…"
+        case .addTodo: return "待办内容，末尾可加日期：明天 / 10-20"
         case .commands: return state.selectedCardIds.isEmpty ? "输入命令…" : "对 \(state.selectedCardIds.count) 张卡做什么？排列、大小、撤销…"
         }
     }
@@ -200,6 +234,7 @@ struct CommandPanelView: View {
         case .commands: return "没有匹配的命令"
         case .recentBoards: return state.recentBoards.isEmpty ? "还没有足迹：切换白板时会记下来" : "没有匹配的白板"
         case .allTodos: return state.todos.isEmpty ? "没有待办：正文第一行写 @todo 的文字卡会出现在这里" : "没有匹配的待办"
+        case .addTodo: return ""
         }
     }
 
@@ -232,7 +267,9 @@ struct CommandPanelView: View {
 
     private var footer: some View {
         HStack(spacing: 5) {
-            if state.panelMode != .commands {
+            if state.panelMode == .addTodo {
+                Text("添加待办").font(.caption).foregroundStyle(.tertiary)
+            } else if state.panelMode != .commands {
                 Text(state.panelMode == .allTodos ? "全部待办 · \(rows.count) 条" : "最近去过 · \(rows.count) 块白板")
                     .font(.caption).foregroundStyle(.tertiary)
             } else if !state.status.isEmpty {
@@ -244,7 +281,7 @@ struct CommandPanelView: View {
                 Text("白板：\(state.boardTitle)").font(.caption).foregroundStyle(.tertiary)
             }
             Spacer()
-            Text(state.panelMode == .commands ? "↑↓ 选择 · ⏎ 执行 · Esc 关闭" : "↑↓ 选择 · ⏎ 跳转 · Esc 返回").font(.caption2).foregroundStyle(.tertiary)
+            Text(footerKeys).font(.caption2).foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 14)
         .frame(height: PanelMetrics.footer)

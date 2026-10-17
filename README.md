@@ -147,12 +147,13 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 例：`一行逆序`、`排成4列倒序`、`按标题一列`、`grid 2 by title`、`按时间逆序`。
 修饰词会从中文连写里剥出来（"列倒序" → 列 + 倒序），剩下的词再去匹配命令。
 
-输入为空时列出全部命令。没有选中卡片时只剩"撤销"和下面三条导航。完整的命令与输出写进 `~/Library/Logs/AllumeCompanion.log`。
+输入为空时列出全部命令。没有选中卡片时只剩"撤销"和下面四条。完整的命令与输出写进 `~/Library/Logs/AllumeCompanion.log`。
 
 ### 导航：最近去过、全部待办、到期提醒
 
-面板最上面固定三行，不管有没有选中都在同一位置，所以可以闭着眼按：⌘K ⏎ 是"最近去过"，⌘K ↓ ⏎ 是"全部待办"，
-⌘K ↓↓ ⏎ 是"回首页"（`list-workspaces` 取当前白板所在 workspace 的根白板，跳过去，和 Allume 面包屑第一节一样；菜单栏也有）
+面板最上面固定四行，不管有没有选中都在同一位置，所以可以闭着眼按：⌘K ⏎ 是"最近去过"，⌘K ↓ ⏎ 是"全部待办"，
+⌘K ↓↓ ⏎ 是"回首页"（`list-workspaces` 取当前白板所在 workspace 的根白板，跳过去，和 Allume 面包屑第一节一样；菜单栏也有），
+⌘K ↓↓↓ ⏎ 是"添加待办"（见下）
 （也能输 `最近` / `待办` 直接筛到它们）。⏎ 之后面板换成那张列表，再输字就在列表里筛，⏎ 跳到那块白板
 （`allume open <白板文档id>`，并把 Allume 带到前台，面板关闭；`open` 不会重画 Allume 左上角的面包屑，
 所以同一 id 连开两次再给 Allume 发一次 ⌘[ 退回第二份，面包屑就按正确路径重画），Esc 或空输入框上按 ⌫ 回到命令。
@@ -165,6 +166,13 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 待办的约定和 Claude 的 allume skill 一致：一张待办一张文字卡，正文第一行 `@todo`，完成改成 `@done`；有到期日的写成
 `@todo(due: 2026-10-20)`（括号里的空格随意，日期只认 `YYYY-MM-DD`）。正文别处出现的日期不算到期日，所以备注里写
 "2026-10-01 开的会"不会触发提醒。
+
+**添加待办**：⏎ 后输入框变成待办内容，再 ⏎ 就用 `card-add --parent <当前白板> --title <内容> --text @todo` 贴一张文字卡
+（照上面的约定：内容是标题，正文只有标记行）。最后一个词是日期就当到期日：`明天`、`后天`、`10-20`、`10/20`、`2026-10-20`
+（月-日已过就算明年），正文写成 `@todo(due: …)`。位置在眼前：Allume 的 AX 树里每张卡的标题是一个屏幕坐标的
+`AXTextField`（整块白板都在树里），把板上只出现一次的标题和模型里的 `frame` 配对，最小二乘解出缩放和偏移
+（`BoardViewport`），窗口画布中心换回白板坐标，再在附近 40pt 网格上找一块不压到别的卡（连标题带）的空位；
+标题不够两个就放在所有卡的右边。菜单栏也有"添加待办…"。
 
 **到期提醒**（`DueReminders`）：带 `(due: …)` 的待办各排一条系统通知，在那天 09:00 响（`UNCalendarNotificationTrigger`）；
 已经到期还没提醒过的，扫到时立刻响一次。点通知就 `allume open` 那块白板。哪些（卡片, 日期）已经响过记在 `reminders.json`，
@@ -353,15 +361,16 @@ Sources/AllumeCompanion/
   AllumeCLI.swift                  经 open -W 调 allume（原因见上）；前台/后台调用计数
   BoardIndex.swift                 标题 → 白板文档 id 表：BFS 爬取、boards.json 缓存、限频重爬
   BoardModel.swift                 当前白板的卡片副本（BoardCard 行）：解析标题、四种刷新时机、缩略图预热
-  CommandRunner.swift              三条命令 + 一层撤销（执行前记 frame，优先用新鲜的模型）；describeSelection 先查模型再回退 CLI；openBoard 跳白板
+  CommandRunner.swift              三条命令 + 一层撤销（执行前记 frame，优先用新鲜的模型）；describeSelection 先查模型再回退 CLI；openBoard 跳白板、goHome 回首页、addTodo 贴待办
   VisitTrail.swift                 足迹：换白板记一条（trail.json），"最近去过"列表的数据
-  TodoIndex.swift                  全部 @todo 文字卡：每块白板一次 --filter @todo，解析截止日期（todos.json）
+  TodoIndex.swift                  全部 @todo 文字卡：每块白板一次 --filter @todo，解析截止日期（todos.json）；TodoDraft 解析"添加待办"的输入
+  BoardViewport.swift              用标题 AXTextField 拟合缩放/偏移，算出视口中心，找不压卡的空位
   DueReminders.swift               有日期的待办排系统通知，点通知跳白板（reminders.json 记已响过的）
   ThumbnailLoader.swift            按类型取缩略图（image/pdf 字节、subBoard 交给 BoardThumbnailRenderer），NSCache 按卡片 id 缓存
   BoardThumbnailRenderer.swift     用 board-content 行离屏画 240×180 的白板缩略（文字、图片、PDF、嵌套白板），按白板 id 缓存到内存 + thumbs/ 目录
   OverlayController.swift          命令面板 NSPanel 及定位
   CommandCatalog.swift             命令表、多语言别名、参数解析（纯 Swift，可单独 swiftc 测）
-  Views.swift                      SwiftUI：CommandPanelView（输入框 + 行列表，三种模式：命令 / 最近去过 / 全部待办）、CardStackView / CardFace（缩略图、正文、图标三种面）
+  Views.swift                      SwiftUI：CommandPanelView（输入框 + 行列表，四种模式：命令 / 最近去过 / 全部待办 / 添加待办）、CardStackView / CardFace（缩略图、正文、图标三种面）
   Log.swift                        ~/Library/Logs/AllumeCompanion.log
 ```
 

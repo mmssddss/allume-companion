@@ -29,6 +29,8 @@ enum CommandKind: Equatable {
     case allTodos
     /// Jump to the root board of the current workspace (the first crumb of Allume's breadcrumb).
     case home
+    /// Switches the panel into a text field whose ⏎ sticks a @todo card on the current board.
+    case addTodo
 }
 
 struct CommandSpec {
@@ -66,7 +68,7 @@ enum CommandCatalog {
     ]
 
     /// The navigation rows sit first, always: ⌘K ⏎ is "最近去过", ⌘K ↓ ⏎ is "全部待办",
-    /// ⌘K ↓↓ ⏎ is "回首页", whatever is selected, so they can be hit from muscle memory. Their hints are filled in
+    /// ⌘K ↓↓ ⏎ is "回首页", ⌘K ↓↓↓ ⏎ is "添加待办", whatever is selected, so they can be hit from muscle memory. Their hints are filled in
     /// live by the panel (last board, number of todos).
     static let specs: [CommandSpec] = [
         CommandSpec(id: "recent", title: "最近去过", hint: "回到之前看过的白板",
@@ -87,6 +89,13 @@ enum CommandCatalog {
                     needsSelection: false,
                     build: { _ in .home },
                     display: { _ in "回首页" }),
+        CommandSpec(id: "add-todo", title: "添加待办", hint: "在当前白板眼前的空位贴一张 @todo 文字卡",
+                    symbol: "plus.circle",
+                    aliases: ["添加待办", "加待办", "新待办", "新建待办", "记待办", "添加", "新建", "便签", "贴",
+                              "add", "new", "addtodo", "note", "tianjia", "jiadaiban", "xinjian"],
+                    needsSelection: false,
+                    build: { _ in .addTodo },
+                    display: { _ in "添加待办" }),
         CommandSpec(id: "grid", title: "排成 N 列", hint: "网格，锚在选中区域左上角，可加数字：grid 4 / 排成4列",
                     symbol: "square.grid.3x3",
                     aliases: ["排成", "排列", "整理", "网格", "列", "grid", "arrange", "columns", "sort", "tidy", "pailie", "wangge", "zhengli"],

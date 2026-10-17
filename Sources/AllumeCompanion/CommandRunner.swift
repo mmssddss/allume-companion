@@ -209,7 +209,7 @@ final class CommandRunner {
         case .resize(let w, let h): await resizeAll(width: w, height: h)
         case .undo: await undo()
         case .home: await goHome()
-        case .recentBoards, .allTodos: break // lists shown by the panel view itself
+        case .recentBoards, .allTodos, .addTodo: break // modes of the panel view itself
         }
     }
 
@@ -253,6 +253,39 @@ final class CommandRunner {
             return
         }
         await openBoard(id: home.id, title: home.title)
+    }
+
+    // MARK: - Adding a todo
+
+    /// Sticks a todo on the current board: a text card titled with the text whose body is the
+    /// marker line (`@todo` / `@todo(due: …)`, see `TodoDraft`), in the middle of what the user
+    /// sees (`BoardViewport`), nudged to the nearest spot not covering other cards; when the
+    /// viewport cannot be solved, right of the board's cards.
+    func addTodo(_ raw: String) async {
+        let draft = TodoDraft.parse(raw)
+        guard !draft.text.isEmpty else { return }
+        guard let model = boardModel, let boardId = model.boardId else {
+            state.setStatus("还不知道当前是哪块白板，稍后再试", error: true)
+            return
+        }
+        state.requestHidePanel?()
+        var x = 80.0, y = 80.0
+        if let pid = NSRunningApplication.runningApplications(withBundleIdentifier: AllumeTracker.bundleID).first?.processIdentifier,
+           let fit = BoardViewport.fit(pid: pid, rows: model.rows) {
+            // A new todo card comes out about 180×40; leave room for a longer title.
+            let spot = BoardViewport.freeSpot(near: fit.center, size: CGSize(width: 240, height: 60), avoiding: model.rows.map(\.frame))
+            x = spot.x; y = spot.y
+            Log.info("add todo: viewport centre (\(Int(fit.center.x)), \(Int(fit.center.y))) at zoom \(String(format: "%.2f", fit.zoom)) from \(fit.pairs) titles")
+        } else if let right = model.rows.map({ $0.frame.x + $0.frame.width }).max(), let top = model.rows.map(\.frame.y).min() {
+            x = right + 40; y = top
+            Log.info("add todo: viewport not solvable; placing right of the cards")
+        }
+        let r = await exec(["card-add", "--parent", boardId, "--title", draft.text, "--text", draft.body,
+                            "--x", Self.num(max(0, x.rounded())), "--y", Self.num(max(0, y.rounded())), "--format", "json"],
+                           showStdout: false)
+        guard r.ok else { return }
+        state.setStatus("已在「\(model.title)」添加待办「\(draft.text)」" + (draft.due.map { "，\($0) 到期" } ?? ""))
+        Task { await model.refresh(reason: "after add todo") }
     }
 
     private static func idSuffix(_ id: String) -> String {

@@ -192,3 +192,53 @@ final class TodoIndex {
         if let data = try? enc.encode(File(scannedAt: scannedAt, items: items)) { try? data.write(to: Self.fileURL, options: .atomic) }
     }
 }
+
+/// What the panel's "添加待办" field becomes: the todo text (the card's title) and a due day
+/// taken from its last word when that is a date: `2026-10-20`, `10-20`, `10/20`, `今天`, `明天`, `后天`.
+struct TodoDraft: Equatable {
+    var text: String
+    /// `YYYY-MM-DD`, nil for an undated todo.
+    var due: String?
+
+    /// The card body: just the marker line (the skill's convention, see `TodoIndex`).
+    var body: String { due.map { "@todo(due: \($0))" } ?? "@todo" }
+
+    nonisolated static func parse(_ raw: String, today: Date = Date()) -> TodoDraft {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let cut = text.rangeOfCharacter(from: .whitespaces, options: .backwards) else { return TodoDraft(text: text) }
+        let last = String(text[cut.upperBound...])
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = .current
+        guard let due = dueDay(last, today: cal.startOfDay(for: today), cal: cal) else { return TodoDraft(text: text) }
+        return TodoDraft(text: text[..<cut.lowerBound].trimmingCharacters(in: .whitespaces), due: due)
+    }
+
+    nonisolated private static func dueDay(_ word: String, today: Date, cal: Calendar) -> String? {
+        let relative = ["今天": 0, "today": 0, "明天": 1, "tomorrow": 1, "后天": 2]
+        var date: Date?
+        if let n = relative[word.lowercased()] {
+            date = cal.date(byAdding: .day, value: n, to: today)
+        } else {
+            let parts = word.split(whereSeparator: { $0 == "-" || $0 == "/" }).map { Int($0) }
+            guard parts.allSatisfy({ $0 != nil }), word.allSatisfy({ $0.isNumber || $0 == "-" || $0 == "/" }) else { return nil }
+            let n = parts.compactMap { $0 }
+            switch n.count {
+            case 3 where n[0] >= 1000: date = valid(year: n[0], month: n[1], day: n[2], cal: cal)
+            case 2:
+                let year = cal.component(.year, from: today)
+                date = valid(year: year, month: n[0], day: n[1], cal: cal)
+                if let d = date, d < today { date = valid(year: year + 1, month: n[0], day: n[1], cal: cal) }
+            default: return nil
+            }
+        }
+        guard let date else { return nil }
+        let c = cal.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
+    }
+
+    /// The date, unless the components do not name a real day (2-30 rolls over in `Calendar`).
+    nonisolated private static func valid(year: Int, month: Int, day: Int, cal: Calendar) -> Date? {
+        guard let d = cal.date(from: DateComponents(year: year, month: month, day: day)),
+              cal.component(.month, from: d) == month, cal.component(.day, from: d) == day else { return nil }
+        return d
+    }
+}
