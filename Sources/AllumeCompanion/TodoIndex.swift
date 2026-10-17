@@ -133,7 +133,8 @@ final class TodoIndex {
     /// Scans every board of `index` in the background; one scan at a time.
     func refresh(index: BoardIndex, reason: String) {
         guard scan == nil else { return }
-        let boards = index.entries.map { ($0.id, $0.title) }
+        // Empty boards (most daily notes) hold no todo: no call for them.
+        let boards = index.entries.filter { $0.cardCount != 0 }.map { ($0.id, $0.title) }
         guard !boards.isEmpty else { return }
         Log.info("todo index: scan started (\(reason)), \(boards.count) boards")
         scan = Task { [weak self] in

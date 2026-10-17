@@ -58,8 +58,8 @@ final class AppState: ObservableObject {
     /// Name of the step the "撤销" button would revert; nil when there is nothing to undo.
     @Published var undoLabel: String?
     /// Which list the panel shows: the commands, one of the two navigation lists, or the
-    /// "添加待办" text field.
-    enum PanelMode: Equatable { case commands, recentBoards, allTodos, addTodo }
+    /// "添加待办" / "新建项目" text fields.
+    enum PanelMode: Equatable { case commands, recentBoards, allTodos, addTodo, addProject }
     @Published var panelMode: PanelMode = .commands
     /// Boards visited, most recent first, without the current one (VisitTrail; refreshed on switch).
     @Published var recentBoards: [VisitTrail.Visit] = []
@@ -67,6 +67,8 @@ final class AppState: ObservableObject {
     @Published var todos: [TodoItem] = []
     /// Every board BoardIndex knows, for the "白板" section when typing in the panel.
     @Published var boards: [BoardRef] = []
+    /// Project board id → Todo / Doing / Done, as the companion last saw them (CompanionStore).
+    @Published var projects: [String: ProjectStatus] = [:]
     /// Set by AppDelegate: closes the panel (a jump command leaves it).
     var requestHidePanel: (() -> Void)?
 

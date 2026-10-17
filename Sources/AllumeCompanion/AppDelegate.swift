@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         ReminderSettings.registerDefaults()
+        CompanionSettings.registerDefaults()
         applySetup(AllumeSetup.detect())
         runner = CommandRunner(state: state)
         overlay = OverlayController(state: state, runner: runner)
@@ -171,6 +172,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     case "todos": self.state.panelMode = .allTodos
                     case "recent": self.state.panelMode = .recentBoards
                     case "add": self.state.panelMode = .addTodo
+                    case "project": self.state.panelMode = .addProject
                     default: break
                     }
                     if let path = env["ALLUME_SNAPSHOT"], !path.isEmpty {
@@ -199,8 +201,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // Test hook: SIGUSR2 runs a panel command on the current selection, like clicking its button.
         // `ALLUME_USR2` is a command query exactly as one would type it in the panel
-        // ("grid 4", "resize 300x200", "一行", "undo"); default "排成 3 列". `open:<board id>` jumps there;
-        // `todo:<text>` adds a todo to the current board; `type:<text>` fills the panel's field
+        // ("grid 4", "resize 300x200", "一行", "undo", "今天", "完成"); default "排成 3 列". `open:<board id>` jumps there;
+        // `todo:<text>` adds a todo to the current board; `project:<name>` creates a project; `type:<text>` fills the panel's field
         // (then snapshots it to ALLUME_SNAPSHOT when set).
         signal(SIGUSR2, SIG_IGN)
         usr2Source = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
@@ -221,6 +223,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 if query.hasPrefix("todo:") {
                     await self.runner.addTodo(String(query.dropFirst(5)))
+                    Log.info("panel log:\n" + self.state.log); return
+                }
+                if query.hasPrefix("project:") {
+                    await self.runner.addProject(String(query.dropFirst(8)))
                     Log.info("panel log:\n" + self.state.log); return
                 }
                 if query.hasPrefix("open:") {

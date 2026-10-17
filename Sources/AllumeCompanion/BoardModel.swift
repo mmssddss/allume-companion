@@ -7,6 +7,7 @@ struct BoardCard: Decodable {
     }
     struct Document: Decodable {
         let id: String?
+        let title: String?      // sub-boards: the board's own title
         let body: String?       // text / chain cards: the inline body
         let fileName: String?   // image / pdf / video / file cards
         let byteSize: Int?

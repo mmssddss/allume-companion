@@ -24,8 +24,13 @@ final class CommandRunner {
     var boardModel: BoardModel?
     /// How recent the board model must be for an undo snapshot to use it instead of re-reading.
     static let snapshotMaxAge: TimeInterval = 2
+    /// Ids of the companion's own boards (daily notes, projects; Companion.swift).
+    let companion = CompanionStore()
 
-    init(state: AppState) { self.state = state }
+    init(state: AppState) {
+        self.state = state
+        state.projects = companion.allProjects
+    }
 
     // MARK: - Undo state
 
@@ -36,13 +41,15 @@ final class CommandRunner {
     /// a second round of CLI calls.
     private var lastRows: [String: CardRow] = [:]
 
-    private struct UndoEntry {
+    struct UndoEntry {
         let label: String
         /// CLI invocations that reverse the step, run in order.
         let commands: [[String]]
+        /// Bookkeeping to put back once the commands ran (the companion's project list).
+        var after: (() -> Void)? = nil
     }
 
-    private var undoEntry: UndoEntry? {
+    var undoEntry: UndoEntry? {
         didSet { state.undoLabel = undoEntry?.label }
     }
 
@@ -54,7 +61,7 @@ final class CommandRunner {
     // MARK: - CLI
 
     @discardableResult
-    private func exec(_ args: [String], showStdout: Bool = true) async -> AllumeCLI.Result {
+    func exec(_ args: [String], showStdout: Bool = true) async -> AllumeCLI.Result {
         state.appendLog(AllumeCLI.render(args))
         let r = await AllumeCLI.run(args)
         if showStdout, !r.stdout.isEmpty { state.appendLog(r.stdout) }
@@ -214,10 +221,12 @@ final class CommandRunner {
         case .resize(let w, let h): await resizeAll(width: w, height: h)
         case .undo: await undo()
         case .home: await goHome()
+        case .today: await openToday()
+        case .moveProjects(let target): await moveProjects(to: target)
         case .openSelectedBoard:
             guard let card = state.selectedCards.first, let id = card.documentId else { return }
             await openBoard(id: id, title: card.title)
-        case .recentBoards, .allTodos, .addTodo: break // modes of the panel view itself
+        case .recentBoards, .allTodos, .addTodo, .addProject: break // modes of the panel view itself
         }
     }
 
@@ -296,15 +305,15 @@ final class CommandRunner {
         Task { await model.refresh(reason: "after add todo") }
     }
 
-    private static func idSuffix(_ id: String) -> String {
+    static func idSuffix(_ id: String) -> String {
         id.split(separator: ":").last.map(String.init) ?? id
     }
 
-    private static func num(_ v: Double) -> String {
+    static func num(_ v: Double) -> String {
         v == v.rounded() && abs(v) < 1e15 ? String(Int(v)) : String(v)
     }
 
-    private func moveBack(_ id: String, to f: Frame) -> [String] {
+    func moveBack(_ id: String, to f: BoardCard.Frame) -> [String] {
         ["card-move", "--id", id, "--x", Self.num(f.x), "--y", Self.num(f.y),
          "--width", Self.num(f.width), "--height", Self.num(f.height)]
     }
@@ -397,6 +406,7 @@ final class CommandRunner {
         state.appendLog("撤销：\(entry.label)")
         var failed = 0
         for cmd in entry.commands where !(await exec(cmd).ok) { failed += 1 }
+        entry.after?()
         state.setStatus(failed == 0 ? "已撤销：\(entry.label)" : "撤销 \(entry.label)：\(failed)/\(entry.commands.count) 条失败", error: failed > 0)
         state.appendLog(state.status)
         if let boardModel { Task { await boardModel.refresh(reason: "after undo") } }

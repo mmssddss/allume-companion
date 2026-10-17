@@ -25,14 +25,14 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
   清掉旧记录，重启 app 让它重新弹系统提示。
 - 日志：`tail -f ~/Library/Logs/AllumeCompanion.log`。
 - 测试钩子：`kill -USR1 $(pgrep -x AllumeCompanion)` 等于按 ⌘K（预设选中时也会重新从模型/CLI 补标题并打印 ⌘K 统计）；`kill -USR2 ...` 等于点"排成 N 列"
-  （`ALLUME_USR2="小"` 这类值会像在输入框里打字一样经过命令匹配）；`kill -INFO ...` 等于点"撤销"；
+  （`ALLUME_USR2="小"` 这类值会像在输入框里打字一样经过命令匹配，`"今天"` `"完成"` 也一样；`project:<名字>` 新建项目）；`kill -INFO ...` 等于点"撤销"；
   `ALLUME_SELECT_IDS=a,b,c open build/AllumeCompanion.app` 启动时直接预设选中的卡片 id，不经过 ⌘C
   （这时 `kill -USR1` 只开关面板、不重读选中；再加 `ALLUME_SNAPSHOT=/path.png` 会在面板打开时把它渲染成 PNG，
   不需要屏幕录制权限）；
   用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志
   （每个节点的角色、标题/正文、屏幕坐标、焦点/选中态、非标准属性名，以及当前的 `AXFocusedUIElement`）。
 - 它是菜单栏常驻 app（无 Dock 图标）。菜单栏图标里只有三项：打开面板 ⌘K、设置… ⌘,、退出。
-  "最近去过""全部待办""回首页""添加待办"都在面板里。
+  "最近去过""全部待办""回首页""今天""添加待办""新建项目"都在面板里。
 
 ### 设置
 
@@ -165,11 +165,12 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 
 | 场景 | 列出的组 |
 |---|---|
-| 没选中 | 导航（最近去过、全部待办、回首页）· 新建（添加待办）· 编辑（撤销，有可撤销的一步时才有） |
+| 没选中 | 导航（最近去过、全部待办、回首页、今天）· 新建（添加待办、新建项目）· 编辑（撤销，有可撤销的一步时才有） |
+| 选中 project，或人在 project 白板里 | 最前面多一组"项目"：完成（→ Done）、移到 Doing、移到 Todo，已经在的那一格不列 |
 | 选中一张 | 大小 · 导航 · 新建 · 编辑；这张是子白板时最前面多一组"这块白板：打开「标题」" |
 | 选中多张 | 排列（N 列、一行、一列）· 大小 · 导航 · 新建 · 编辑 |
 
-每条命令要什么写在 `CommandSpec.needs`（`.cards(2)` 排列、`.cards(1)` 大小、`.oneBoard` 打开、`.undoStep` 撤销）。
+每条命令要什么写在 `CommandSpec.needs`（`.cards(2)` 排列、`.cards(1)` 大小、`.oneBoard` 打开、`.undoStep` 撤销、`.project(目标)` 改项目状态）。
 
 打字时换成三组，按各组最好那条的匹配度排（同分时命令 > 白板 > 待办）：命令（只含当前场景可用的）、
 白板（`BoardIndex` 里所有白板按标题匹配，副标题是上级路径，⏎ 跳过去）、待办（按待办的名字匹配，⏎ 跳到它所在的白板），
@@ -208,7 +209,7 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 
 没选中时面板最上面是这四行，可以闭着眼按（有选中时卡片命令在前，它们排在后面）：⌘K ⏎ 是"最近去过"，⌘K ↓ ⏎ 是"全部待办"，
 ⌘K ↓↓ ⏎ 是"回首页"（`list-workspaces` 取当前白板所在 workspace 的根白板，跳过去，和 Allume 面包屑第一节一样），
-⌘K ↓↓↓ ⏎ 是"添加待办"（见下）
+⌘K ↓↓↓ ⏎ 是"今天"（见"日记与项目"），⌘K ↓↓↓↓ ⏎ 是"添加待办"（见下）
 （也能输 `最近` / `待办` 直接筛到它们）。⏎ 之后面板换成那张列表，再输字就在列表里筛，⏎ 跳到那块白板
 （`allume open <白板文档id>`，并把 Allume 带到前台，面板关闭；`open` 不会重画 Allume 左上角的面包屑，
 所以同一 id 连开两次再给 Allume 发一次 ⌘[ 退回第二份，面包屑就按正确路径重画），Esc 或空输入框上按 ⌫ 回到命令。
@@ -254,6 +255,32 @@ Allume 自己的 Delete 键就是删除，而且带原生 ⌘Z。
 （`OverlayController.rearm`），Allume 窗口移动/缩放时隐藏着的面板也跟着摆好，启动时还会透明地显示一次预热 SwiftUI；
 于是打开只剩一次 `orderFront`，实测 5–15 ms（之前 10–50 ms，波动来自每次打开时的重排）。读选中的剪贴板往返在面板出现之后才开始，
 期间卡片堆的位置先放一个虚线占位，卡片到了再换，输入框不会左右跳。
+
+### 日记与项目
+
+Companion 在 workspace 的根白板上有一块自己的白板 `workspace-Companion`（第一次用时建，放在根白板现有内容的右边）：
+
+```
+workspace-Companion
+├─ Daily Notes › 2026 › 2026-10 › 2026-10-17
+└─ Projects › Todo / Doing / Done › project-<名字>
+```
+
+- **今天**（`今天` / `today` / `日记`）：跳到今天的白板，缺哪层建哪层。年白板里 12 个月按季度排成 4 行 × 3 列；
+  月白板最上面一行是「一 二 … 日」文字卡，下面每天一块白板按日历排（同一列是同一个星期几，一周从周一还是周日开始在设置里改，
+  只影响以后新建的月份）。第一次说"今天"时先建到今天这一块就跳过去，同一年其余的月份和日子在后台补齐（一年约 730 次 CLI、
+  三个并发、实测 74 秒；补过的月份记在 `filledMonths`，不再重读）。今天的白板已经在了就只读一次月白板确认它还挂着，然后跳。
+- **新建项目**：⏎ 后输入名字，建一块 `project-<名字>` 白板放进 Todo（设置里可改成 Doing），排在网格最前。
+- **完成 / 移到 Doing / 移到 Todo**：作用于选中的 project 卡片；没选中 project 时作用于当前所在的 project 白板。
+  CLI 不能把卡片挪到另一块白板，做法是把同一块白板文档挂到目标列表（`card-create --document`），再删掉原来那张卡；
+  白板本身和里面的东西都不动（实测过），只是外层卡片 id 变了。之后两边列表里的 project 卡片重新排成网格
+  （列数在设置里，默认 6），按卡片 id 后半段倒序，即最新挂上去的在左上。撤销 = 删新卡、`undelete` 旧卡、其余卡 `card-move` 回去。
+  新建项目也能撤销（删掉那张卡；白板文档留着，没挂在任何地方）。
+- **不碰别的东西**：所有自己建的白板 id 记在 `~/Library/Application Support/AllumeCompanion/companion.json`（按 workspace），
+  找子白板时先认记下的 id，再认同一块父白板上同名的，都没有才新建；只在这棵树里写。改状态前现读 Todo / Doing / Done，
+  只认这三块白板上标题以 `project-` 开头的子白板；别处同名、同前缀的白板都不算。
+- 几百块空的日白板不拖慢索引：`BoardIndex` 从父白板的列表里顺便拿到每块子白板的 `cardCount`，空白板不再读它的子白板，
+  `TodoIndex` 也跳过它们。
 
 ### 当前白板模型：什么时候查 CLI、什么时候用缓存
 
@@ -425,19 +452,20 @@ Sources/AllumeCompanion/
   AllumeCLI.swift                  经 open -W 调 allume（原因见上）；前台/后台调用计数
   BoardIndex.swift                 标题 → 白板文档 id 表：BFS 爬取、boards.json 缓存、限频重爬
   BoardModel.swift                 当前白板的卡片副本（BoardCard 行）：解析标题、四种刷新时机、缩略图预热
+  Companion.swift                  日记与项目：CompanionLayout（标题、日历和网格位置，纯 Foundation）、companion.json、今天 / 新建项目 / 改状态
   CommandRunner.swift              三条命令 + 一层撤销（执行前记 frame，优先用新鲜的模型）；describeSelection 先查模型再回退 CLI；openBoard 跳白板、goHome 回首页、addTodo 贴待办
   VisitTrail.swift                 足迹：换白板记一条（trail.json），"最近去过"列表的数据
   TodoIndex.swift                  全部 @todo 文字卡：每块白板一次 --filter @todo，解析截止日期（todos.json）；TodoDraft 把"添加待办"的输入变成标记行
   DateWords.swift                  自然语言到期日：规则表 + NSDataDetector 兜底，补全和自动替换
   BoardViewport.swift              用标题 AXTextField 拟合缩放/偏移，算出视口中心，找不压卡的空位
   DueReminders.swift               有日期的待办排系统通知，点通知跳白板（reminders.json 记已响过的）；ReminderSettings 开关和时间
-  Settings.swift                   设置窗口：Allume 安装检查、登录时打开、权限状态、到期提醒、待办与缓存、关于
+  Settings.swift                   设置窗口：Allume 安装检查、登录时打开、权限状态、到期提醒、日记与项目、待办与缓存、关于
   AllumeInstall.swift              AllumeSetup：从 CLI 链接找到 Allume.app 和 bundle id；CLI 写入模式探测
   ThumbnailLoader.swift            按类型取缩略图（image/pdf 字节、subBoard 交给 BoardThumbnailRenderer），NSCache 按卡片 id 缓存
   BoardThumbnailRenderer.swift     用 board-content 行离屏画 240×180 的白板缩略（文字、图片、PDF、嵌套白板），按白板 id 缓存到内存 + thumbs/ 目录
   OverlayController.swift          命令面板 NSPanel 及定位
   CommandCatalog.swift             命令表、多语言别名、参数解析（纯 Swift，可单独 swiftc 测）
-  Views.swift                      SwiftUI：CommandPanelView（输入框 + 行列表，四种模式：命令 / 最近去过 / 全部待办 / 添加待办）、CardStackView / CardFace（缩略图、正文、图标三种面）
+  Views.swift                      SwiftUI：CommandPanelView（输入框 + 行列表，五种模式：命令 / 最近去过 / 全部待办 / 添加待办 / 新建项目）、CardStackView / CardFace（缩略图、正文、图标三种面）
   Log.swift                        ~/Library/Logs/AllumeCompanion.log
 ```
 

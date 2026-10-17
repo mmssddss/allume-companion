@@ -33,16 +33,23 @@ enum CommandKind: Equatable {
     case addTodo
     /// Jump into the one selected sub-board card.
     case openSelectedBoard
+    /// Open (creating if needed) today's daily note.
+    case today
+    /// Switches the panel into a text field whose ⏎ creates a `project-` board.
+    case addProject
+    /// Move the selected projects (or the current project board) to Todo / Doing / Done.
+    case moveProjects(ProjectStatus)
 }
 
 /// The panel's sections, in the order they are listed with an empty field: what can be done to
 /// the selection first (absent when nothing is selected), then the always-there rows.
 enum CommandGroup: Int, CaseIterable {
-    case board, arrange, size, navigate, create, edit
+    case board, project, arrange, size, navigate, create, edit
 
     var title: String {
         switch self {
         case .board: return "这块白板"
+        case .project: return "项目"
         case .arrange: return "排列"
         case .size: return "大小"
         case .navigate: return "导航"
@@ -61,6 +68,8 @@ enum CommandNeeds: Equatable {
     case oneBoard
     /// A step the runner can undo.
     case undoStep
+    /// Projects (selected, or the board the user is on) of which some are not on this list yet.
+    case project(ProjectStatus)
 }
 
 /// What ⌘C found, as far as listing commands goes.
@@ -68,6 +77,8 @@ struct SelectionContext: Equatable {
     var count = 0
     var singleBoard = false
     var canUndo = false
+    /// Where the projects a status command would act on are now (`CommandRunner.projectTargets`).
+    var projectStatuses: Set<ProjectStatus> = []
 }
 
 struct CommandSpec {
@@ -107,7 +118,7 @@ enum CommandCatalog {
 
     /// Catalog order is the tie-break when typing. With an empty field the panel lists the
     /// available commands by `group` (CommandGroup order): with nothing selected that is
-    /// ⌘K ⏎ "最近去过", ⌘K ↓ ⏎ "全部待办", ⌘K ↓↓ ⏎ "回首页", ⌘K ↓↓↓ ⏎ "添加待办"; with cards
+    /// ⌘K ⏎ "最近去过", ⌘K ↓ ⏎ "全部待办", ⌘K ↓↓ ⏎ "回首页", ⌘K ↓↓↓ ⏎ "今天"; with cards
     /// selected their commands come first. Hints of the navigation rows are filled in live by
     /// the panel (last board, number of todos).
     static let specs: [CommandSpec] = [
@@ -129,6 +140,12 @@ enum CommandCatalog {
                     group: .navigate, needs: .nothing,
                     build: { _ in .home },
                     display: { _ in "回首页" }),
+        CommandSpec(id: "today", title: "今天", hint: "今天的 daily note",
+                    symbol: "calendar",
+                    aliases: ["今天", "今日", "日记", "每日", "daily", "today", "journal", "jintian", "riji"],
+                    group: .navigate, needs: .nothing,
+                    build: { _ in .today },
+                    display: { _ in "今天" }),
         CommandSpec(id: "add-todo", title: "添加待办", hint: "在眼前贴一张 @todo 卡",
                     symbol: "plus.circle",
                     aliases: ["添加待办", "加待办", "新待办", "新建待办", "记待办", "添加", "新建", "便签", "贴",
@@ -136,6 +153,30 @@ enum CommandCatalog {
                     group: .create, needs: .nothing,
                     build: { _ in .addTodo },
                     display: { _ in "添加待办" }),
+        CommandSpec(id: "add-project", title: "新建项目", hint: "建一块 project- 白板",
+                    symbol: "folder.badge.plus",
+                    aliases: ["新建项目", "新项目", "项目", "建项目", "project", "newproject", "xiangmu", "xinxiangmu"],
+                    group: .create, needs: .nothing,
+                    build: { _ in .addProject },
+                    display: { _ in "新建项目" }),
+        CommandSpec(id: "project-done", title: "完成", hint: "移到 Done",
+                    symbol: "checkmark.seal",
+                    aliases: ["完成", "做完", "搞定", "结束", "done", "finish", "complete", "wancheng", "zuowan"],
+                    group: .project, needs: .project(.done),
+                    build: { _ in .moveProjects(.done) },
+                    display: { _ in "完成" }),
+        CommandSpec(id: "project-doing", title: "移到 Doing", hint: "开始做",
+                    symbol: "play.circle",
+                    aliases: ["开始", "进行", "进行中", "在做", "doing", "start", "kaishi", "jinxing"],
+                    group: .project, needs: .project(.doing),
+                    build: { _ in .moveProjects(.doing) },
+                    display: { _ in "移到 Doing" }),
+        CommandSpec(id: "project-todo", title: "移到 Todo", hint: "放回待做",
+                    symbol: "tray",
+                    aliases: ["放回", "待做", "搁置", "以后", "todo", "backlog", "later", "fanghui"],
+                    group: .project, needs: .project(.todo),
+                    build: { _ in .moveProjects(.todo) },
+                    display: { _ in "移到 Todo" }),
         CommandSpec(id: "open-board", title: "打开白板", hint: "进入这块白板",
                     symbol: "arrow.right.square",
                     aliases: ["打开", "进入", "进去", "跳转", "open", "enter", "go", "dakai", "jinru"],
@@ -192,6 +233,7 @@ enum CommandCatalog {
         case .cards(let n): return context.count >= n
         case .oneBoard: return context.count == 1 && context.singleBoard
         case .undoStep: return context.canUndo
+        case .project(let target): return !context.projectStatuses.subtracting([target]).isEmpty
         }
     }
 

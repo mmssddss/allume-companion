@@ -108,6 +108,13 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   测各场景：`ALLUME_SELECT_IDS=","`（空选中）/ 一张子白板 id / 多张 id，配 `ALLUME_SNAPSHOT`；打字用 `ALLUME_USR2="type:…"`。
   测打开过程：`ALLUME_FRAMES=<目录> open build/AllumeCompanion.app` 后真按 ⌘K（或 `kill -USR1`），每次打开在
   `<目录>/show-<时间>/` 下每 ~25ms 抓一帧窗口（文件名带 ms 时间和窗口 alpha；图里不含 alpha 和玻璃背后的内容）。
+- 日记与项目（`Companion.swift`，README "日记与项目"）：自己的白板 id 全记在 `companion.json`（按 workspace），只在
+  `workspace-Companion` 这棵树里写；改项目状态只认 Todo / Doing / Done 上 `project-` 开头的子白板（现读确认）。
+  "挪"卡片 = `card-create --document <白板id>` 挂到目标 + `delete` 原卡，白板内容不丢（实测）。子白板卡默认 200×150、最小约
+  120×100；文字卡最小 170×40（再小会被夹回）。`board-create -f id` 只打印 id；`card-create -f json` 输出一行数组。
+  测：`ALLUME_USR2="今天"` / `"project:名字"` / `"完成"`（配 `ALLUME_SELECT_IDS`）+ `kill -USR2`，撤销 `kill -INFO`；
+  `ALLUME_PANEL_MODE=project` 出新建项目输入框；设置页 `ALLUME_SETTINGS_TAB=companion`。删掉 companion.json 不会重复建
+  （会按标题在父白板上认回来），但 `filledMonths` 丢了会把每个月重读一遍。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。
 - 图标：`Resources/AppIcon.icon`（Icon Composer 格式）由 build-app.sh 里的 `xcrun actool … --app-icon AppIcon` 编成
   Assets.car + AppIcon.icns。`icon.json` 的 `groups` **第一个在最上层**（和 Icon Composer 界面一致）。想看系统真正渲染的

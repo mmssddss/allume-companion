@@ -57,6 +57,7 @@ extension CommandGroup {
     var tint: Color {
         switch self {
         case .board: return .teal
+        case .project: return .indigo
         case .arrange: return Theme.accent
         case .size: return .pink
         case .navigate: return .blue
@@ -107,7 +108,8 @@ struct CommandPanelView: View {
         let one = state.selectedCards.count == 1 ? state.selectedCards.first : nil
         return SelectionContext(count: state.selectedCardIds.count,
                                 singleBoard: one?.kind == "subBoard" && one?.documentId != nil,
-                                canUndo: state.undoLabel != nil)
+                                canUndo: state.undoLabel != nil,
+                                projectStatuses: Set(runner.projectTargets().items.map(\.status)))
     }
 
     private var matches: [CommandMatch] {
@@ -132,6 +134,7 @@ struct CommandPanelView: View {
         case .recentBoards: return [PanelSection(id: "list", title: nil, rows: filtered(state.recentBoards.map(boardRow)))]
         case .allTodos: return [PanelSection(id: "list", title: nil, rows: filtered(state.todos.map(todoRow)))]
         case .addTodo: return [PanelSection(id: "list", title: nil, rows: addTodoRows)]
+        case .addProject: return [PanelSection(id: "list", title: nil, rows: addProjectRows)]
         }
     }
 
@@ -202,6 +205,20 @@ struct CommandPanelView: View {
         return rows
     }
 
+    /// The "新建项目" field's one row: the board title ⏎ creates, and where.
+    private var addProjectRows: [PanelRow] {
+        let raw = query // runSelected clears the field before the row runs
+        let title = CompanionLayout.projectTitle(raw)
+        let list = CompanionSettings.newProjectStatus.title
+        return [PanelRow(id: "add-project-draft", symbol: "folder.badge.plus", tint: CommandGroup.create.tint,
+                         title: title.isEmpty ? "输入项目名字" : title,
+                         hint: title.isEmpty ? "会加上 project- 前缀" : "建在 Projects › \(list)，排在最前",
+                         accessory: list, action: "新建") {
+            guard !title.isEmpty else { return }
+            Task { await runner.addProject(raw) }
+        }]
+    }
+
     /// Tab in the "添加待办" field: take the highlighted date suggestion, or the first one.
     private func acceptDate() -> Bool {
         let list = addTodoRows
@@ -240,6 +257,18 @@ struct CommandPanelView: View {
             if let label = state.undoLabel { hint = "撤回「\(label)」" }
         case .home, .openSelectedBoard: action = "跳转"
         case .addTodo: action = "新建"
+        case .today:
+            let t = CompanionLayout.today()
+            hint = CompanionLayout.dayTitle(t.year, t.month, t.day) + " " + CompanionLayout.weekdayName(year: t.year, month: t.month, day: t.day)
+            action = "打开"
+        case .addProject:
+            hint = "建在 \(CompanionSettings.newProjectStatus.title) 里，名字前加 project-"
+        case .moveProjects(let target):
+            let (items, fromBoard) = runner.projectTargets()
+            let todo = items.filter { $0.status != target }
+            hint = todo.count == 1 ? (fromBoard ? "当前白板「\(todo[0].title)」" : "「\(todo[0].title)」") : "\(todo.count) 个 project"
+            if target == .done { hint += " → Done" }
+            action = target == .done ? "完成" : "移动"
         default: break
         }
         var title = m.title
@@ -252,6 +281,7 @@ struct CommandPanelView: View {
             case .recentBoards: state.panelMode = .recentBoards
             case .allTodos: state.panelMode = .allTodos
             case .addTodo: state.panelMode = .addTodo
+            case .addProject: state.panelMode = .addProject
             default: Task { await runner.run(m.kind) }
             }
         }
@@ -405,6 +435,7 @@ struct CommandPanelView: View {
         switch state.panelMode {
         case .commands: return "↑↓ 选择 · ⏎ 执行 · Esc 关闭"
         case .addTodo: return "⏎ 添加 · Tab 补全日期 · Esc 返回"
+        case .addProject: return "⏎ 新建 · Esc 返回"
         default: return "↑↓ 选择 · ⏎ 跳转 · Esc 返回"
         }
     }
@@ -413,12 +444,13 @@ struct CommandPanelView: View {
         switch state.panelMode {
         case .allTodos: return "checklist"
         case .addTodo: return "plus"
+        case .addProject: return "folder.badge.plus"
         default: return "clock.arrow.circlepath"
         }
     }
 
     private var modeTint: Color {
-        state.panelMode == .addTodo ? CommandGroup.create.tint : CommandGroup.navigate.tint
+        state.panelMode == .addTodo || state.panelMode == .addProject ? CommandGroup.create.tint : CommandGroup.navigate.tint
     }
 
     /// With nothing selected the field just invites a command; the reason nothing was read
@@ -428,6 +460,7 @@ struct CommandPanelView: View {
         case .recentBoards: return "筛选最近去过的白板…"
         case .allTodos: return "筛选待办…"
         case .addTodo: return "待办内容，加个日期：下周二 交房租"
+        case .addProject: return "项目名字"
         case .commands: return "搜索命令、白板、待办…"
         }
     }
@@ -439,7 +472,7 @@ struct CommandPanelView: View {
         case .commands: return "没有匹配的结果"
         case .recentBoards: return state.recentBoards.isEmpty ? "还没有足迹：切换白板时会记下来" : "没有匹配的白板"
         case .allTodos: return state.todos.isEmpty ? "没有待办：正文第一行写 @todo 的文字卡会出现在这里" : "没有匹配的待办"
-        case .addTodo: return ""
+        case .addTodo, .addProject: return ""
         }
     }
 

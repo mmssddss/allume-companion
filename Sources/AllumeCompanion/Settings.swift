@@ -19,6 +19,9 @@ final class SettingsModel: ObservableObject {
     // Read in `refresh`: this model is made before AppDelegate registers the defaults.
     @Published var remindersEnabled = true
     @Published var reminderTime = Date()
+    @Published var weekStartsMonday = true
+    @Published var newProjectStatus = ProjectStatus.todo
+    @Published var projectColumns = 6
     @Published var todoCount = 0
     @Published var overdueCount = 0
     @Published var boardCount = 0
@@ -53,6 +56,9 @@ final class SettingsModel: ObservableObject {
         if remindersEnabled != ReminderSettings.enabled { remindersEnabled = ReminderSettings.enabled }
         let time = ReminderSettings.fireDate(on: Date())
         if !Calendar.current.isDate(time, equalTo: reminderTime, toGranularity: .minute) { reminderTime = time }
+        if weekStartsMonday != CompanionSettings.weekStartsMonday { weekStartsMonday = CompanionSettings.weekStartsMonday }
+        if newProjectStatus != CompanionSettings.newProjectStatus { newProjectStatus = CompanionSettings.newProjectStatus }
+        if projectColumns != CompanionSettings.projectColumns { projectColumns = CompanionSettings.projectColumns }
         (todoCount, overdueCount, scannedAt, scanning, boardCount) = indexFacts()
         Task { notifications = await DueReminders.permission() }
     }
@@ -75,6 +81,21 @@ final class SettingsModel: ObservableObject {
         remindersChanged()
     }
 
+    func setWeekStartsMonday(_ on: Bool) {
+        CompanionSettings.weekStartsMonday = on
+        weekStartsMonday = on
+    }
+
+    func setNewProjectStatus(_ s: ProjectStatus) {
+        CompanionSettings.newProjectStatus = s
+        newProjectStatus = s
+    }
+
+    func setProjectColumns(_ n: Int) {
+        CompanionSettings.projectColumns = n
+        projectColumns = CompanionSettings.projectColumns
+    }
+
     func setReminderTime(_ date: Date) {
         let c = Calendar.current.dateComponents([.hour, .minute], from: date)
         guard c.hour != ReminderSettings.hour || c.minute != ReminderSettings.minute else { return }
@@ -87,13 +108,14 @@ final class SettingsModel: ObservableObject {
 
 /// The tabs of the 设置 window, in toolbar order.
 enum SettingsTab: String, CaseIterable {
-    case general, allume, reminders, data, about
+    case general, allume, reminders, companion, data, about
 
     var title: String {
         switch self {
         case .general: return "通用"
         case .allume: return "Allume"
         case .reminders: return "提醒"
+        case .companion: return "日记与项目"
         case .data: return "数据"
         case .about: return "关于"
         }
@@ -104,6 +126,7 @@ enum SettingsTab: String, CaseIterable {
         case .general: return "gearshape"
         case .allume: return "checklist"
         case .reminders: return "bell"
+        case .companion: return "calendar"
         case .data: return "internaldrive"
         case .about: return "info.circle"
         }
@@ -213,6 +236,7 @@ struct SettingsPage: View {
             case .general: general
             case .allume: allume
             case .reminders: reminders
+            case .companion: companion
             case .data: data
             case .about: about
             }
@@ -306,6 +330,34 @@ struct SettingsPage: View {
             }
         }
         note("待办的写法：文字卡正文第一行 @todo(due: 2026-10-20) 内容")
+    }
+
+    @ViewBuilder private var companion: some View {
+        labeled("一周从：") {
+            Picker("", selection: Binding(get: { model.weekStartsMonday }, set: { model.setWeekStartsMonday($0) })) {
+                Text("周一").tag(true)
+                Text("周日").tag(false)
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+        }
+        note("月白板顶上的「一 二 … 日」和日历格子按这个排，只影响以后新建的月份。")
+        Divider()
+        labeled("新项目放进：") {
+            Picker("", selection: Binding(get: { model.newProjectStatus }, set: { model.setNewProjectStatus($0) })) {
+                Text("Todo").tag(ProjectStatus.todo)
+                Text("Doing").tag(ProjectStatus.doing)
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+        }
+        labeled("每行项目数：") {
+            Stepper("\(model.projectColumns) 个", value: Binding(get: { model.projectColumns }, set: { model.setProjectColumns($0) }),
+                    in: CompanionSettings.columnRange)
+                .fixedSize()
+        }
+        note("Todo / Doing / Done 里的项目按网格排，最新的在左上；下次新建或移动项目时按新的列数重排。")
+        Divider()
+        note("都在 workspace 根白板上的「\(CompanionLayout.rootTitle)」里：Daily Notes 按 年 › 月 › 日 嵌套，"
+             + "Projects 下分 Todo / Doing / Done。只有这三块白板里 project- 开头的白板能改状态，别处的白板一概不碰。")
     }
 
     @ViewBuilder private var data: some View {

@@ -20,6 +20,10 @@ final class BoardIndex {
         /// Board that lists this one as a sub-board; nil for a workspace root.
         var parentId: String?
         var lastSeen: Date
+        /// Cards on the board, from its parent's listing; 0 means there is nothing to read inside
+        /// (no sub-boards, no todos), so the crawl and the todo scan skip it. nil for roots and
+        /// boards learned outside the crawl.
+        var cardCount: Int? = nil
     }
 
     private struct File: Codable {
@@ -81,10 +85,16 @@ final class BoardIndex {
         save()
     }
 
-    /// Records a board learned outside the crawl (from `card-content`'s `parentDocumentId`).
-    func learn(title: String, id: String) {
-        guard !title.isEmpty, !entries.contains(where: { $0.id == id }) else { touch(id); return }
-        entries.append(Entry(title: title, id: id, parentId: nil, lastSeen: Date()))
+    /// Records a board learned outside the crawl (from `card-content`'s `parentDocumentId`, or
+    /// one the companion just created or moved, with the board it now sits on).
+    func learn(title: String, id: String, parentId: String? = nil) {
+        if let i = entries.firstIndex(where: { $0.id == id }) {
+            if let parentId { entries[i].parentId = parentId }
+            touch(id)
+            return
+        }
+        guard !title.isEmpty else { return }
+        entries.append(Entry(title: title, id: id, parentId: parentId, lastSeen: Date(), cardCount: parentId == nil ? nil : 0))
         Log.info("board index: learned \"\(title)\" = \(id)")
         save()
     }
@@ -137,7 +147,7 @@ final class BoardIndex {
 
     private struct Workspace: Decodable { let title: String?; let rootBoardId: String? }
     private struct SubBoardRow: Decodable {
-        struct Document: Decodable { let id: String?; let title: String? }
+        struct Document: Decodable { let id: String?; let title: String?; let cardCount: Int? }
         let title: String?
         let document: Document?
     }
@@ -182,12 +192,14 @@ final class BoardIndex {
                 for (parent, subRows) in rows {
                     for row in subRows {
                         guard let id = row.document?.id, visited.insert(id).inserted else { continue }
-                        next.append(Entry(title: row.document?.title ?? row.title ?? "", id: id, parentId: parent, lastSeen: seen))
+                        next.append(Entry(title: row.document?.title ?? row.title ?? "", id: id, parentId: parent,
+                                          lastSeen: seen, cardCount: row.document?.cardCount))
                     }
                 }
             }
             found += next
-            frontier = next.map(\.id)
+            // An empty board has no sub-boards to list (most daily notes are empty).
+            frontier = next.filter { $0.cardCount != 0 }.map(\.id)
         }
         return (found, calls)
     }
