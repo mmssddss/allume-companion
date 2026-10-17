@@ -257,9 +257,13 @@ struct CommandPanelView: View {
             if let label = state.undoLabel { hint = "撤回「\(label)」" }
         case .home, .openSelectedBoard: action = "跳转"
         case .addTodo: action = "新建"
-        case .today:
-            let t = CompanionLayout.today()
+        case .day(let offset):
+            let t = CompanionLayout.today(offset: offset)
             hint = CompanionLayout.dayTitle(t.year, t.month, t.day) + " " + CompanionLayout.weekdayName(year: t.year, month: t.month, day: t.day)
+            action = "打开"
+        case .thisMonth:
+            let t = CompanionLayout.today()
+            hint = CompanionLayout.monthTitle(t.year, t.month)
             action = "打开"
         case .addProject:
             hint = "建在 \(CompanionSettings.newProjectStatus.title) 里，名字前加 project-"

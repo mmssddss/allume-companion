@@ -105,8 +105,10 @@ enum CompanionLayout {
     static func monthTitle(_ year: Int, _ month: Int) -> String { String(format: "%04d-%02d", year, month) }
     static func dayTitle(_ year: Int, _ month: Int, _ day: Int) -> String { String(format: "%04d-%02d-%02d", year, month, day) }
 
-    static func today(_ now: Date = Date()) -> (year: Int, month: Int, day: Int) {
-        let c = calendar.dateComponents([.year, .month, .day], from: now)
+    /// The day `offset` days from today (-1 yesterday, 1 tomorrow).
+    static func today(offset: Int = 0, _ now: Date = Date()) -> (year: Int, month: Int, day: Int) {
+        let date = calendar.date(byAdding: .day, value: offset, to: now) ?? now
+        let c = calendar.dateComponents([.year, .month, .day], from: date)
         return (c.year ?? 2000, c.month ?? 1, c.day ?? 1)
     }
 
@@ -295,16 +297,16 @@ extension CommandRunner {
 
     // MARK: Daily notes
 
-    /// "今天": opens today's board under Daily Notes › year › month, creating what is missing,
-    /// then fills in the rest of the year (every month, every day) in the background. With
-    /// today's board already there this is one read and the jump.
-    func openToday() async {
+    /// "今天" / "昨天" / "明天": opens that day's board under Daily Notes › year › month, creating
+    /// what is missing, then fills in the rest of that year (every month, every day) in the
+    /// background. With the board already there this is one read and the jump.
+    func openDay(offset: Int) async {
         guard !state.isRunning else { return }
         state.requestHidePanel?()
         state.isRunning = true
         defer { state.isRunning = false }
         state.setStatus("")
-        let t = CompanionLayout.today()
+        let t = CompanionLayout.today(offset: offset)
         let dayTitle = CompanionLayout.dayTitle(t.year, t.month, t.day)
         let monthTitle = CompanionLayout.monthTitle(t.year, t.month)
         guard let ws = await companionWorkspace() else { return }
@@ -315,12 +317,12 @@ extension CommandRunner {
             fillYear(t.year)
             return
         }
-        state.appendLog("准备今天的 daily note：\(dayTitle)")
+        state.appendLog("准备 daily note：\(dayTitle)")
         guard let base = await ensureBase(),
               let yearId = await ensureYear(t.year, base: base),
               let monthId = await ensureMonth(t.year, t.month, yearId: yearId, workspace: base.workspace),
               let onMonth = await rows(of: monthId, subBoardsOnly: true) else {
-            if state.status.isEmpty { state.setStatus("没能建好今天的白板，看日志", error: true) }
+            if state.status.isEmpty { state.setStatus("没能建好 \(dayTitle) 的白板，看日志", error: true) }
             return
         }
         let slot = CompanionLayout.daySlots(year: t.year, month: t.month, mondayFirst: CompanionSettings.weekStartsMonday)
@@ -329,6 +331,34 @@ extension CommandRunner {
                                             workspace: ws.id, slot: { slot }) else { return }
         companion.update(ws.id) { $0.days[dayTitle] = dayId }
         await openBoard(id: dayId, title: dayTitle)
+        fillYear(t.year)
+    }
+
+    /// "本月": opens this month's calendar board, creating the path to it like `openDay`.
+    func openThisMonth() async {
+        guard !state.isRunning else { return }
+        state.requestHidePanel?()
+        state.isRunning = true
+        defer { state.isRunning = false }
+        state.setStatus("")
+        let t = CompanionLayout.today()
+        let monthTitle = CompanionLayout.monthTitle(t.year, t.month)
+        guard let ws = await companionWorkspace() else { return }
+        let reg = companion.registry(ws.id)
+        if let monthId = reg.months[monthTitle], let yearId = reg.years[CompanionLayout.yearTitle(t.year)],
+           let onYear = await rows(of: yearId, subBoardsOnly: true), onYear.contains(where: { $0.document?.id == monthId }) {
+            await openBoard(id: monthId, title: monthTitle)
+            fillYear(t.year)
+            return
+        }
+        state.appendLog("准备月白板：\(monthTitle)")
+        guard let base = await ensureBase(),
+              let yearId = await ensureYear(t.year, base: base),
+              let monthId = await ensureMonth(t.year, t.month, yearId: yearId, workspace: base.workspace) else {
+            if state.status.isEmpty { state.setStatus("没能建好 \(monthTitle) 的白板，看日志", error: true) }
+            return
+        }
+        await openBoard(id: monthId, title: monthTitle)
         fillYear(t.year)
     }
 

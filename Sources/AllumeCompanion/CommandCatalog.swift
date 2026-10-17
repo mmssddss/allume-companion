@@ -33,8 +33,10 @@ enum CommandKind: Equatable {
     case addTodo
     /// Jump into the one selected sub-board card.
     case openSelectedBoard
-    /// Open (creating if needed) today's daily note.
-    case today
+    /// Open (creating if needed) the daily note `offset` days from today: 0 today, -1, 1.
+    case day(offset: Int)
+    /// Open (creating if needed) this month's calendar board.
+    case thisMonth
     /// Switches the panel into a text field whose ⏎ creates a `project-` board.
     case addProject
     /// Move the selected projects (or the current project board) to Todo / Doing / Done.
@@ -142,10 +144,28 @@ enum CommandCatalog {
                     display: { _ in "回首页" }),
         CommandSpec(id: "today", title: "今天", hint: "今天的 daily note",
                     symbol: "calendar",
-                    aliases: ["今天", "今日", "日记", "每日", "daily", "today", "journal", "jintian", "riji"],
+                    aliases: ["今天", "今日", "日记", "每日", "daily", "today", "journal", "jintian", "jinri", "riji"],
                     group: .navigate, needs: .nothing,
-                    build: { _ in .today },
+                    build: { _ in .day(offset: 0) },
                     display: { _ in "今天" }),
+        CommandSpec(id: "yesterday", title: "昨天", hint: "昨天的 daily note",
+                    symbol: "chevron.left.circle",
+                    aliases: ["昨天", "昨日", "yesterday", "prev", "previous", "zuotian", "zuori"],
+                    group: .navigate, needs: .nothing,
+                    build: { _ in .day(offset: -1) },
+                    display: { _ in "昨天" }),
+        CommandSpec(id: "tomorrow", title: "明天", hint: "明天的 daily note",
+                    symbol: "chevron.right.circle",
+                    aliases: ["明天", "明日", "tomorrow", "next", "mingtian", "mingri"],
+                    group: .navigate, needs: .nothing,
+                    build: { _ in .day(offset: 1) },
+                    display: { _ in "明天" }),
+        CommandSpec(id: "this-month", title: "本月", hint: "这个月的日历白板",
+                    symbol: "calendar.badge.clock",
+                    aliases: ["本月", "这个月", "当月", "月历", "日历", "month", "thismonth", "calendar", "benyue", "dangyue", "yueli", "rili"],
+                    group: .navigate, needs: .nothing,
+                    build: { _ in .thisMonth },
+                    display: { _ in "本月" }),
         CommandSpec(id: "add-todo", title: "添加待办", hint: "在眼前贴一张 @todo 卡",
                     symbol: "plus.circle",
                     aliases: ["添加待办", "加待办", "新待办", "新建待办", "记待办", "添加", "新建", "便签", "贴",

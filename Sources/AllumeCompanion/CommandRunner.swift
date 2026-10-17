@@ -221,7 +221,8 @@ final class CommandRunner {
         case .resize(let w, let h): await resizeAll(width: w, height: h)
         case .undo: await undo()
         case .home: await goHome()
-        case .today: await openToday()
+        case .day(let offset): await openDay(offset: offset)
+        case .thisMonth: await openThisMonth()
         case .moveProjects(let target): await moveProjects(to: target)
         case .openSelectedBoard:
             guard let card = state.selectedCards.first, let id = card.documentId else { return }
