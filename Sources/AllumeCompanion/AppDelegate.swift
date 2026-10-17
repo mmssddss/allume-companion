@@ -311,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(withTitle: "读取选中并打开面板  ⌘K", action: #selector(menuRead), keyEquivalent: "")
         menu.addItem(withTitle: "最近去过…", action: #selector(menuRecent), keyEquivalent: "")
         menu.addItem(withTitle: "全部待办…", action: #selector(menuTodos), keyEquivalent: "")
+        menu.addItem(withTitle: "回首页", action: #selector(menuHome), keyEquivalent: "")
         menu.addItem(withTitle: "重新扫描待办", action: #selector(menuRescan), keyEquivalent: "")
         menu.addItem(withTitle: "发一条测试通知", action: #selector(menuTestNotification), keyEquivalent: "")
         menu.addItem(withTitle: "打开辅助功能设置…", action: #selector(openAXSettings), keyEquivalent: "")
@@ -323,6 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func menuRead() { readSelectionAndShow() }
     @objc private func menuRecent() { state.panelMode = .recentBoards; readSelectionAndShow() }
     @objc private func menuTodos() { state.panelMode = .allTodos; readSelectionAndShow() }
+    @objc private func menuHome() { Task { await runner.goHome() } }
     @objc private func menuRescan() { todoIndex.refresh(index: boardIndex, reason: "menu") }
     @objc private func menuTestNotification() { reminders.sendTest() }
 

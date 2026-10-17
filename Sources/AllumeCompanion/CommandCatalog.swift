@@ -27,6 +27,8 @@ enum CommandKind: Equatable {
     /// The two navigation lists; the panel view switches into them instead of calling the runner.
     case recentBoards
     case allTodos
+    /// Jump to the root board of the current workspace (the first crumb of Allume's breadcrumb).
+    case home
 }
 
 struct CommandSpec {
@@ -63,8 +65,8 @@ enum CommandCatalog {
         ("小", 160, 120), ("中", 200, 150), ("大", 280, 210),
     ]
 
-    /// The two navigation rows sit first, always: ⌘K ⏎ is "最近去过", ⌘K ↓ ⏎ is "全部待办",
-    /// whatever is selected, so they can be hit from muscle memory. Their hints are filled in
+    /// The navigation rows sit first, always: ⌘K ⏎ is "最近去过", ⌘K ↓ ⏎ is "全部待办",
+    /// ⌘K ↓↓ ⏎ is "回首页", whatever is selected, so they can be hit from muscle memory. Their hints are filled in
     /// live by the panel (last board, number of todos).
     static let specs: [CommandSpec] = [
         CommandSpec(id: "recent", title: "最近去过", hint: "回到之前看过的白板",
@@ -79,6 +81,12 @@ enum CommandCatalog {
                     needsSelection: false,
                     build: { _ in .allTodos },
                     display: { _ in "全部待办" }),
+        CommandSpec(id: "home", title: "回首页", hint: "跳到当前 workspace 的首页（最顶层白板）",
+                    symbol: "house",
+                    aliases: ["回首页", "首页", "主页", "顶层", "根", "home", "root", "top", "shouye", "zhuye"],
+                    needsSelection: false,
+                    build: { _ in .home },
+                    display: { _ in "回首页" }),
         CommandSpec(id: "grid", title: "排成 N 列", hint: "网格，锚在选中区域左上角，可加数字：grid 4 / 排成4列",
                     symbol: "square.grid.3x3",
                     aliases: ["排成", "排列", "整理", "网格", "列", "grid", "arrange", "columns", "sort", "tidy", "pailie", "wangge", "zhengli"],

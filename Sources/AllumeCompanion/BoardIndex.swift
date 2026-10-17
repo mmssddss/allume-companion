@@ -58,6 +58,8 @@ final class BoardIndex {
 
     func title(of id: String) -> String? { entries.first { $0.id == id }?.title }
 
+    func parentId(of id: String) -> String? { entries.first { $0.id == id }?.parentId }
+
     /// Marks `id` as the board we just confirmed the user is on (it wins future ties).
     func touch(_ id: String) {
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }

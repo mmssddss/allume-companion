@@ -208,6 +208,7 @@ final class CommandRunner {
         case .gather(let layout, let columns, let order): await gather(layout: layout, columns: columns, order: order)
         case .resize(let w, let h): await resizeAll(width: w, height: h)
         case .undo: await undo()
+        case .home: await goHome()
         case .recentBoards, .allTodos: break // lists shown by the panel view itself
         }
     }
@@ -231,6 +232,27 @@ final class CommandRunner {
         try? await Task.sleep(for: .milliseconds(150))
         state.appendLog("⌘[ → Allume（让它重画面包屑）")
         SelectionReader.postCommand(key: 33, to: app.processIdentifier) // kVK_ANSI_LeftBracket
+    }
+
+    private struct Workspace: Decodable { let title: String?; let rootBoardId: String? }
+
+    /// Jumps to the root board of the workspace the current board is in: `list-workspaces` gives
+    /// each workspace's root, and with several workspaces the one above the current board in
+    /// `BoardIndex` wins (else the first).
+    func goHome() async {
+        state.requestHidePanel?()
+        let r = await exec(["list-workspaces", "--format", "json"], showStdout: false)
+        guard r.ok else { return }
+        let roots = ((try? JSONDecoder().decode([Workspace].self, from: Data(r.stdout.utf8))) ?? [])
+            .compactMap { w in w.rootBoardId.map { (id: $0, title: w.title ?? "") } }
+        var above = Set<String>()
+        var next = boardModel?.boardId
+        while let id = next, above.insert(id).inserted { next = boardModel?.index.parentId(of: id) }
+        guard let home = roots.first(where: { above.contains($0.id) }) ?? roots.first else {
+            state.setStatus("list-workspaces 没有返回 workspace", error: true)
+            return
+        }
+        await openBoard(id: home.id, title: home.title)
     }
 
     private static func idSuffix(_ id: String) -> String {
