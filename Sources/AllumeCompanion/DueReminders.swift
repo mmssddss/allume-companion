@@ -1,7 +1,7 @@
 import AppKit
 import UserNotifications
 
-/// System notifications for `@todo` cards whose body names a date. The CLI knows no time at all,
+/// System notifications for `@todo(due: YYYY-MM-DD)` cards. The CLI knows no time at all,
 /// so this is the companion's job alone: each dated todo gets one notification at 09:00 on its
 /// day (`UNCalendarNotificationTrigger`); one already due fires once, now. Clicking the banner
 /// runs `allume open <board>` and brings Allume forward. Which (card, due day) pairs were already

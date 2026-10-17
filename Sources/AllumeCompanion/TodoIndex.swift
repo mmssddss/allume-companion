@@ -8,21 +8,16 @@ struct TodoItem: Codable, Hashable, Identifiable {
     let boardTitle: String
     let title: String
     let body: String
-    /// First `YYYY-MM-DD`-like date in the body (`截止 2026-10-20`, `2026/10/20`, `10月20日`), as a day.
+    /// The day named by the marker line, `@todo(due: 2026-10-20)`; nil for a plain `@todo`.
     let due: Date?
 
     var id: String { cardId }
 
-    /// What the row is called: the card title, else the first body line that is not the marker
-    /// or a date/time stamp.
+    /// What the row is called: the card title, else the first non-empty body line after the marker.
     var label: String {
         if !title.isEmpty { return title }
         let lines = body.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
-        let dateLike = try! NSRegularExpression(pattern: #"^(截止|due)?\s*[\d]{4}[-/.年]\d{1,2}[-/.月]\d{1,2}"#, options: .caseInsensitive)
-        for l in lines.dropFirst() where !l.isEmpty {
-            if dateLike.firstMatch(in: l, range: NSRange(l.startIndex..., in: l)) != nil { continue }
-            return String(l.prefix(60))
-        }
+        for l in lines.dropFirst() where !l.isEmpty { return String(l.prefix(60)) }
         return "（无标题）"
     }
 
@@ -45,8 +40,8 @@ struct TodoItem: Codable, Hashable, Identifiable {
 /// Every `@todo` text card in every board, found with one
 /// `board-content <id> --filter @todo --kinds text --format json` per board of the BoardIndex
 /// (a few in flight at once, all background). A card counts when the first line of its body is
-/// exactly `@todo` (the skill's convention: the marker lives in the body, since the CLI cannot
-/// edit titles). Refreshed after every index crawl, then every `interval` while Allume runs;
+/// `@todo` or `@todo(due: YYYY-MM-DD)` (the skill's convention: the marker lives in the body,
+/// since the CLI cannot edit titles; the due day lives in the marker, not loose in the text). Refreshed after every index crawl, then every `interval` while Allume runs;
 /// in between, a board the BoardModel just loaded updates its own slice for free (`adopt`).
 /// Cached at ~/Library/Application Support/AllumeCompanion/todos.json so the list is there at launch.
 @MainActor
@@ -81,37 +76,27 @@ final class TodoIndex {
 
     // MARK: - Parsing
 
-    /// `@todo` on the first non-empty line, alone (the convention) — `@todo 打电话` on one line
-    /// is accepted too, so a hastily typed card still counts.
-    nonisolated static func isTodo(_ body: String?) -> Bool {
-        guard let first = body?.split(separator: "\n").first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else { return false }
-        let t = first.trimmingCharacters(in: .whitespaces).lowercased()
-        return t == "@todo" || t.hasPrefix("@todo ")
+    /// The marker line: `@todo`, or `@todo(due: 2026-10-20)` for a dated one. Whitespace inside
+    /// the parentheses is free, trailing words after the marker are tolerated, case is ignored.
+    nonisolated private static let marker = try! NSRegularExpression(
+        pattern: #"^@todo(?:\s*\(\s*due\s*:\s*(\d{4})-(\d{1,2})-(\d{1,2})\s*\))?(?:\s|$)"#, options: .caseInsensitive)
+
+    nonisolated private static func markerMatch(_ body: String?) -> (line: NSString, match: NSTextCheckingResult)? {
+        guard let first = body?.split(separator: "\n").first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else { return nil }
+        let line = first.trimmingCharacters(in: .whitespaces) as NSString
+        guard let m = marker.firstMatch(in: line as String, range: NSRange(location: 0, length: line.length)) else { return nil }
+        return (line, m)
     }
 
-    nonisolated private static let fullDate = try! NSRegularExpression(pattern: #"(20\d\d)\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})"#)
-    nonisolated private static let monthDay = try! NSRegularExpression(pattern: #"(?<!\d)(\d{1,2})\s*月\s*(\d{1,2})\s*(日|号)"#)
+    /// A card is a todo when the first non-empty line of its body starts with the `@todo` marker.
+    nonisolated static func isTodo(_ body: String?) -> Bool { markerMatch(body) != nil }
 
-    /// First date in `body`. `10月20日` without a year is this year, or next year if that day
-    /// is more than a month past (a due date rarely points far back).
-    nonisolated static func dueDate(in body: String, now: Date = Date()) -> Date? {
-        let ns = body as NSString
-        let range = NSRange(location: 0, length: ns.length)
+    /// The due day of the marker line, at 09:00 local time; nil when the marker has no `(due: …)`.
+    nonisolated static func dueDate(in body: String) -> Date? {
+        guard let (line, m) = markerMatch(body), m.range(at: 1).location != NSNotFound else { return nil }
+        let y = Int(line.substring(with: m.range(at: 1))), mo = Int(line.substring(with: m.range(at: 2))), d = Int(line.substring(with: m.range(at: 3)))
         var cal = Calendar(identifier: .gregorian); cal.timeZone = .current
-        if let m = fullDate.firstMatch(in: body, range: range) {
-            let y = Int(ns.substring(with: m.range(at: 1))), mo = Int(ns.substring(with: m.range(at: 2))), d = Int(ns.substring(with: m.range(at: 3)))
-            return cal.date(from: DateComponents(year: y, month: mo, day: d, hour: 9))
-        }
-        if let m = monthDay.firstMatch(in: body, range: range) {
-            let mo = Int(ns.substring(with: m.range(at: 1))), d = Int(ns.substring(with: m.range(at: 2)))
-            let year = cal.component(.year, from: now)
-            guard let thisYear = cal.date(from: DateComponents(year: year, month: mo, day: d, hour: 9)) else { return nil }
-            if thisYear.timeIntervalSince(now) < -30 * 86400 {
-                return cal.date(from: DateComponents(year: year + 1, month: mo, day: d, hour: 9))
-            }
-            return thisYear
-        }
-        return nil
+        return cal.date(from: DateComponents(year: y, month: mo, day: d, hour: 9))
     }
 
     nonisolated static func items(from rows: [BoardCard], boardId: String, boardTitle: String) -> [TodoItem] {

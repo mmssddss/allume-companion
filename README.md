@@ -158,12 +158,13 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 | 列表 | 数据从哪来 | 行 |
 |---|---|---|
 | 最近去过 | `VisitTrail`：`BoardModel` 每次换白板（AX 窗口标题变化并在 `BoardIndex` 里解析成 id）记一条，时间是本 app 的时钟（CLI 没有时间），存在 `~/Library/Application Support/AllumeCompanion/trail.json`，最多 200 条 | 去重后最近的 15 块，不含当前白板；副标题是"3 分钟前"这样的相对时间 |
-| 全部待办 | `TodoIndex`：对 `BoardIndex` 里每块白板跑一次 `board-content <id> --filter @todo --kinds text --format json`（4 个并发，后台，79 块约 7 秒），取正文第一行是 `@todo` 的文字卡；索引爬完后扫一次，之后每 15 分钟一次，当前白板每次装入模型时顺手更新它那一片（0 次 CLI）；缓存在 `todos.json`，启动即有 | 标题是卡片标题，没有标题就取正文里第一行不是标记也不是日期的字；副标题是所在白板；右侧是到期状态（今天 / 明天 / N 天后 / 已过期 N 天），到期的排最前 |
+| 全部待办 | `TodoIndex`：对 `BoardIndex` 里每块白板跑一次 `board-content <id> --filter @todo --kinds text --format json`（4 个并发，后台，79 块约 7 秒），取正文第一行以 `@todo` 开头的文字卡；索引爬完后扫一次，之后每 15 分钟一次，当前白板每次装入模型时顺手更新它那一片（0 次 CLI）；缓存在 `todos.json`，启动即有 | 标题是卡片标题，没有标题就取正文里第一行不是标记也不是日期的字；副标题是所在白板；右侧是到期状态（今天 / 明天 / N 天后 / 已过期 N 天），到期的排最前 |
 
-待办的约定和 Claude 的 allume skill 一致：一张待办一张文字卡，正文第一行 `@todo`，完成改成 `@done`；日期写在正文里
-（`截止 2026-10-20`、`2026/10/20`、`10月20日` 都认，取第一个）。
+待办的约定和 Claude 的 allume skill 一致：一张待办一张文字卡，正文第一行 `@todo`，完成改成 `@done`；有到期日的写成
+`@todo(due: 2026-10-20)`（括号里的空格随意，日期只认 `YYYY-MM-DD`）。正文别处出现的日期不算到期日，所以备注里写
+"2026-10-01 开的会"不会触发提醒。
 
-**到期提醒**（`DueReminders`）：有日期的待办各排一条系统通知，在那天 09:00 响（`UNCalendarNotificationTrigger`）；
+**到期提醒**（`DueReminders`）：带 `(due: …)` 的待办各排一条系统通知，在那天 09:00 响（`UNCalendarNotificationTrigger`）；
 已经到期还没提醒过的，扫到时立刻响一次。点通知就 `allume open` 那块白板。哪些（卡片, 日期）已经响过记在 `reminders.json`，
 不会重复。第一次启动系统会问是否允许通知；拒绝了（或当时把 app 杀了）就在菜单栏"打开通知设置…"里打开，
 下次扫描（菜单"重新扫描待办"或 15 分钟一到）会自动生效，不用重启。日志里 `reminders: authorization status 1` 就是没允许。
