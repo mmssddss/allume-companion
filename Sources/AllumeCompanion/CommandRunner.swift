@@ -26,6 +26,9 @@ final class CommandRunner {
     static let snapshotMaxAge: TimeInterval = 2
     /// Ids of the companion's own boards (daily notes, projects; Companion.swift).
     let companion = CompanionStore()
+    /// A board the runner wrote to and read back in full (a day board after "记到某天"), for
+    /// TodoIndex; set by AppDelegate.
+    var onBoardRead: ((_ id: String, _ title: String, _ rows: [BoardCard]) -> Void)?
 
     init(state: AppState) {
         self.state = state
@@ -227,7 +230,7 @@ final class CommandRunner {
         case .openSelectedBoard:
             guard let card = state.selectedCards.first, let id = card.documentId else { return }
             await openBoard(id: id, title: card.title)
-        case .recentBoards, .allTodos, .addTodo, .addProject: break // modes of the panel view itself
+        case .recentBoards, .allTodos, .addTodo, .addToDay, .addProject: break // modes of the panel view itself
         }
     }
 

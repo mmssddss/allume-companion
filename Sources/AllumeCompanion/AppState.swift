@@ -59,7 +59,7 @@ final class AppState: ObservableObject {
     @Published var undoLabel: String?
     /// Which list the panel shows: the commands, one of the two navigation lists, or the
     /// "添加待办" / "新建项目" text fields.
-    enum PanelMode: Equatable { case commands, recentBoards, allTodos, addTodo, addProject }
+    enum PanelMode: Equatable { case commands, recentBoards, allTodos, addTodo, addToDay, addProject }
     @Published var panelMode: PanelMode = .commands
     /// Boards visited, most recent first, without the current one (VisitTrail; refreshed on switch).
     @Published var recentBoards: [VisitTrail.Visit] = []

@@ -112,6 +112,9 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   `workspace-Companion` 这棵树里写；改项目状态只认 Todo / Doing / Done 上 `project-` 开头的子白板（现读确认）。
   "挪"卡片 = `card-create --document <白板id>` 挂到目标 + `delete` 原卡，白板内容不丢（实测）。子白板卡默认 200×150、最小约
   120×100；文字卡最小 170×40（再小会被夹回）。`board-create -f id` 只打印 id；`card-create -f json` 输出一行数组。
+  "记到某天"（`addTodoToDay`）复用添加待办的输入解析，`ensureDay` 和"今天"共用；贴完用 `onBoardRead` 喂 `TodoIndex.adopt`、
+  `BoardIndex.noteCardCount` 改卡片数（否则 cardCount 0 的日白板在下次爬表前会被扫描跳过，待办又消失）。
+  测：`ALLUME_USR2="day:内容 明天"` + `kill -USR2`（测完 `allume delete`）；面板 `ALLUME_PANEL_MODE=day`。
   测：`ALLUME_USR2="今天"`（`昨天` `明天` `本月` 同理）/ `"project:名字"` / `"完成"`（配 `ALLUME_SELECT_IDS`）+ `kill -USR2`，撤销 `kill -INFO`；
   `ALLUME_PANEL_MODE=project` 出新建项目输入框；设置页 `ALLUME_SETTINGS_TAB=companion`。删掉 companion.json 不会重复建
   （会按标题在父白板上认回来），但 `filledMonths` 丢了会把每个月重读一遍。

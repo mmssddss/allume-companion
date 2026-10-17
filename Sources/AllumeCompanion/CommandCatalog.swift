@@ -31,6 +31,8 @@ enum CommandKind: Equatable {
     case home
     /// Switches the panel into a text field whose ⏎ sticks a @todo card on the current board.
     case addTodo
+    /// Same field, but ⏎ sticks the @todo card on that day's daily note (default today).
+    case addToDay
     /// Jump into the one selected sub-board card.
     case openSelectedBoard
     /// Open (creating if needed) the daily note `offset` days from today: 0 today, -1, 1.
@@ -173,6 +175,13 @@ enum CommandCatalog {
                     group: .create, needs: .nothing,
                     build: { _ in .addTodo },
                     display: { _ in "添加待办" }),
+        CommandSpec(id: "add-to-day", title: "记到某天", hint: "贴到那天的 daily note",
+                    symbol: "calendar.badge.plus",
+                    aliases: ["记到某天", "记到那天", "记到日记", "贴到日记", "加到日记", "日记待办", "安排", "排到",
+                              "schedule", "plan", "addday", "jidao", "anpai", "riji"],
+                    group: .create, needs: .nothing,
+                    build: { _ in .addToDay },
+                    display: { _ in "记到某天" }),
         CommandSpec(id: "add-project", title: "新建项目", hint: "建一块 project- 白板",
                     symbol: "folder.badge.plus",
                     aliases: ["新建项目", "新项目", "项目", "建项目", "project", "newproject", "xiangmu", "xinxiangmu"],

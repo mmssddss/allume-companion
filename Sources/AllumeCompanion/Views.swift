@@ -133,7 +133,7 @@ struct CommandPanelView: View {
             return searchSections(trimmed)
         case .recentBoards: return [PanelSection(id: "list", title: nil, rows: filtered(state.recentBoards.map(boardRow)))]
         case .allTodos: return [PanelSection(id: "list", title: nil, rows: filtered(state.todos.map(todoRow)))]
-        case .addTodo: return [PanelSection(id: "list", title: nil, rows: addTodoRows)]
+        case .addTodo, .addToDay: return [PanelSection(id: "list", title: nil, rows: addTodoRows)]
         case .addProject: return [PanelSection(id: "list", title: nil, rows: addProjectRows)]
         }
     }
@@ -178,19 +178,30 @@ struct CommandPanelView: View {
     /// same `@todo(due: …) 内容` line `TodoIndex` reads), then the date phrases the half-typed
     /// tail could become (`下周` → 下周一 … 下周日); picking one, or Tab for the first, swaps the
     /// tail for its date. A finished phrase is swapped as soon as it is typed (`autoReplaceDate`).
+    ///
+    /// "记到某天" is the same field; ⏎ puts the card on that day's daily note, today when no date
+    /// is typed (`CommandRunner.addTodoToDay` reads the field the same way).
     private var addTodoRows: [PanelRow] {
         let raw = query // runSelected clears the field before the row runs
-        let draft = TodoDraft.parse(raw)
-        let board = runner.boardModel?.title ?? state.boardTitle
-        let place = board.isEmpty ? "当前白板" : "「\(board)」"
+        let toDay = state.panelMode == .addToDay
+        var draft = TodoDraft.parse(raw)
+        if toDay, !draft.text.isEmpty, draft.due == nil { draft.due = DateWords.iso(Date()) }
+        let place: String
+        if toDay, let iso = draft.due, let t = CompanionLayout.day(iso: iso) {
+            place = "Daily Notes › \(iso) \(CompanionLayout.weekdayName(year: t.year, month: t.month, day: t.day))"
+        } else {
+            let board = runner.boardModel?.title ?? state.boardTitle
+            place = board.isEmpty ? "当前白板" : "「\(board)」"
+        }
         let dueText = draft.due.flatMap { iso in DateWords.match(in: iso, atEnd: true).map { DateWords.describe($0.date) } }
-        var rows = [PanelRow(id: "add-todo-draft", symbol: "plus", tint: CommandGroup.create.tint,
+        let empty = toDay ? "日期写在开头或末尾，不写就是今天：明天、下周二、10-20"
+                          : "日期写在开头或末尾：明天、下周二、月底、3天后、10-20"
+        var rows = [PanelRow(id: "add-todo-draft", symbol: toDay ? "calendar.badge.plus" : "plus", tint: CommandGroup.create.tint,
                              title: draft.text.isEmpty ? "输入待办内容" : draft.body,
-                             hint: draft.text.isEmpty ? "日期写在开头或末尾：明天、下周二、月底、3天后、10-20"
-                                                      : "贴到\(place)" + (draft.due == nil ? "，没有到期日" : ""),
-                             accessory: dueText, action: "添加") {
+                             hint: draft.text.isEmpty ? empty : "贴到\(place)" + (draft.due == nil ? "，没有到期日" : ""),
+                             accessory: dueText, action: toDay ? "记到那天" : "添加") {
             guard !draft.text.isEmpty else { return }
-            Task { await runner.addTodo(raw) }
+            Task { toDay ? await runner.addTodoToDay(raw) : await runner.addTodo(raw) }
         }]
         if let c = DateWords.completions(for: raw) {
             for p in c.phrases {
@@ -228,9 +239,12 @@ struct CommandPanelView: View {
     }
 
     private func autoReplaceDate() {
-        guard state.panelMode == .addTodo, let replaced = DateWords.autoReplace(query) else { return }
+        guard isTodoField, let replaced = DateWords.autoReplace(query) else { return }
         query = replaced
     }
+
+    /// The two modes whose field is a todo with a date ("添加待办", "记到某天").
+    private var isTodoField: Bool { state.panelMode == .addTodo || state.panelMode == .addToDay }
 
     private func filtered(_ rows: [PanelRow]) -> [PanelRow] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -256,7 +270,7 @@ struct CommandPanelView: View {
         case .undo:
             if let label = state.undoLabel { hint = "撤回「\(label)」" }
         case .home, .openSelectedBoard: action = "跳转"
-        case .addTodo: action = "新建"
+        case .addTodo, .addToDay: action = "新建"
         case .day(let offset):
             let t = CompanionLayout.today(offset: offset)
             hint = CompanionLayout.dayTitle(t.year, t.month, t.day) + " " + CompanionLayout.weekdayName(year: t.year, month: t.month, day: t.day)
@@ -285,6 +299,7 @@ struct CommandPanelView: View {
             case .recentBoards: state.panelMode = .recentBoards
             case .allTodos: state.panelMode = .allTodos
             case .addTodo: state.panelMode = .addTodo
+            case .addToDay: state.panelMode = .addToDay
             case .addProject: state.panelMode = .addProject
             default: Task { await runner.run(m.kind) }
             }
@@ -385,7 +400,7 @@ struct CommandPanelView: View {
                 .onKeyPress(.downArrow) { move(1); return .handled }
                 .onKeyPress(.upArrow) { move(-1); return .handled }
                 .onKeyPress(.tab) {
-                    if state.panelMode == .addTodo, acceptDate() { return .handled }
+                    if isTodoField, acceptDate() { return .handled }
                     move(1); return .handled
                 }
                 .onKeyPress(.delete) {
@@ -439,6 +454,7 @@ struct CommandPanelView: View {
         switch state.panelMode {
         case .commands: return "↑↓ 选择 · ⏎ 执行 · Esc 关闭"
         case .addTodo: return "⏎ 添加 · Tab 补全日期 · Esc 返回"
+        case .addToDay: return "⏎ 记到那天 · Tab 补全日期 · Esc 返回"
         case .addProject: return "⏎ 新建 · Esc 返回"
         default: return "↑↓ 选择 · ⏎ 跳转 · Esc 返回"
         }
@@ -448,13 +464,14 @@ struct CommandPanelView: View {
         switch state.panelMode {
         case .allTodos: return "checklist"
         case .addTodo: return "plus"
+        case .addToDay: return "calendar.badge.plus"
         case .addProject: return "folder.badge.plus"
         default: return "clock.arrow.circlepath"
         }
     }
 
     private var modeTint: Color {
-        state.panelMode == .addTodo || state.panelMode == .addProject ? CommandGroup.create.tint : CommandGroup.navigate.tint
+        isTodoField || state.panelMode == .addProject ? CommandGroup.create.tint : CommandGroup.navigate.tint
     }
 
     /// With nothing selected the field just invites a command; the reason nothing was read
@@ -464,6 +481,7 @@ struct CommandPanelView: View {
         case .recentBoards: return "筛选最近去过的白板…"
         case .allTodos: return "筛选待办…"
         case .addTodo: return "待办内容，加个日期：下周二 交房租"
+        case .addToDay: return "记到哪天：下周二 交房租（不写日期就是今天）"
         case .addProject: return "项目名字"
         case .commands: return "搜索命令、白板、待办…"
         }
@@ -476,7 +494,7 @@ struct CommandPanelView: View {
         case .commands: return "没有匹配的结果"
         case .recentBoards: return state.recentBoards.isEmpty ? "还没有足迹：切换白板时会记下来" : "没有匹配的白板"
         case .allTodos: return state.todos.isEmpty ? "没有待办：正文第一行写 @todo 的文字卡会出现在这里" : "没有匹配的待办"
-        case .addTodo, .addProject: return ""
+        case .addTodo, .addToDay, .addProject: return ""
         }
     }
 
@@ -559,7 +577,7 @@ struct CommandPanelView: View {
                 KeyCap("↩")
                 Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 14).padding(.horizontal, 4)
             }
-            if state.panelMode == .addTodo {
+            if isTodoField {
                 Text("补全日期").font(.system(size: 12)).foregroundStyle(Theme.text2)
                 KeyCap("tab")
                 Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 14).padding(.horizontal, 4)

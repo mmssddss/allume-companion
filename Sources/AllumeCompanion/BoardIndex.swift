@@ -78,6 +78,15 @@ final class BoardIndex {
         }
     }
 
+    /// A board we just wrote to, with its new card count, so the todo scan stops skipping it
+    /// as empty before the next crawl.
+    func noteCardCount(_ count: Int, of id: String) {
+        guard let i = entries.firstIndex(where: { $0.id == id }), entries[i].cardCount != nil,
+              entries[i].cardCount != count else { return }
+        entries[i].cardCount = count
+        save()
+    }
+
     /// Marks `id` as the board we just confirmed the user is on (it wins future ties).
     func touch(_ id: String) {
         guard let i = entries.firstIndex(where: { $0.id == id }) else { return }

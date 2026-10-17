@@ -62,6 +62,8 @@ enum CompanionLayout {
     static let pitchY = 210.0
     static let origin = 80.0
     static let headerHeight = 40.0
+    /// Between the notes stacked down a day board ("记到某天"); they have no title band.
+    static let noteGap = 24.0
 
     static let calendar: Calendar = {
         var c = Calendar(identifier: .gregorian)
@@ -110,6 +112,14 @@ enum CompanionLayout {
         let date = calendar.date(byAdding: .day, value: offset, to: now) ?? now
         let c = calendar.dateComponents([.year, .month, .day], from: date)
         return (c.year ?? 2000, c.month ?? 1, c.day ?? 1)
+    }
+
+    /// The day of a `YYYY-MM-DD` string; nil when it is not one or no such day exists.
+    static func day(iso: String) -> (year: Int, month: Int, day: Int)? {
+        let p = iso.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 3, let date = calendar.date(from: DateComponents(year: p[0], month: p[1], day: p[2])),
+              calendar.component(.day, from: date) == p[2] else { return nil }
+        return (p[0], p[1], p[2])
     }
 
     /// "周六" for a date.
@@ -307,31 +317,68 @@ extension CommandRunner {
         defer { state.isRunning = false }
         state.setStatus("")
         let t = CompanionLayout.today(offset: offset)
+        guard let ws = await companionWorkspace(), let dayId = await ensureDay(t, workspace: ws.id) else { return }
+        await openBoard(id: dayId, title: CompanionLayout.dayTitle(t.year, t.month, t.day))
+        fillYear(t.year)
+    }
+
+    /// "记到某天": sticks an @todo card on that day's board (the date typed at the start or end,
+    /// else today) without leaving the current board; the day's board is created like `openDay`.
+    /// The card goes under the cards already there, at their left edge, so a day's notes read
+    /// top to bottom in the order they were added. The marker carries the day as its due date,
+    /// so it is listed in 全部待办 and reminded like any other dated todo.
+    func addTodoToDay(_ raw: String) async {
+        var draft = TodoDraft.parse(raw)
+        guard !draft.text.isEmpty, !state.isRunning else { return }
+        let t = draft.due.flatMap(CompanionLayout.day(iso:)) ?? CompanionLayout.today()
+        let dayTitle = CompanionLayout.dayTitle(t.year, t.month, t.day)
+        draft.due = dayTitle
+        state.requestHidePanel?()
+        state.isRunning = true
+        defer { state.isRunning = false }
+        state.setStatus("")
+        guard let ws = await companionWorkspace(), let dayId = await ensureDay(t, workspace: ws.id),
+              let onDay = await rows(of: dayId) else { return }
+        let x = onDay.map(\.frame.x).min() ?? CompanionLayout.origin
+        let y = onDay.map { $0.frame.y + $0.frame.height }.max().map { $0 + CompanionLayout.noteGap } ?? CompanionLayout.origin
+        let r = await exec(["card-add", "--parent", dayId, "--text", draft.body,
+                            "--x", Self.num(x.rounded()), "--y", Self.num(y.rounded()), "--format", "json"], showStdout: false)
+        guard r.ok else { return }
+        state.setStatus("已记到 \(dayTitle) \(CompanionLayout.weekdayName(year: t.year, month: t.month, day: t.day))：\(draft.text)")
+        // Read the day back so the todo list and reminders have it now, and so the todo scan
+        // stops skipping the board as empty before the next crawl.
+        if let after = await rows(of: dayId, background: true) {
+            boardModel?.index.noteCardCount(after.count, of: dayId)
+            onBoardRead?(dayId, dayTitle, after)
+        }
+        if boardModel?.boardId == dayId, let model = boardModel { Task { await model.refresh(reason: "after add todo") } }
+        fillYear(t.year)
+    }
+
+    /// That day's board under Daily Notes › year › month, creating what is missing. With it
+    /// already there this is one read (the month board, to check the day is still mounted).
+    private func ensureDay(_ t: (year: Int, month: Int, day: Int), workspace ws: String) async -> String? {
         let dayTitle = CompanionLayout.dayTitle(t.year, t.month, t.day)
         let monthTitle = CompanionLayout.monthTitle(t.year, t.month)
-        guard let ws = await companionWorkspace() else { return }
-        let reg = companion.registry(ws.id)
+        let reg = companion.registry(ws)
         if let dayId = reg.days[dayTitle], let monthId = reg.months[monthTitle],
            let onMonth = await rows(of: monthId, subBoardsOnly: true), onMonth.contains(where: { $0.document?.id == dayId }) {
-            await openBoard(id: dayId, title: dayTitle)
-            fillYear(t.year)
-            return
+            return dayId
         }
         state.appendLog("准备 daily note：\(dayTitle)")
+        let slot = CompanionLayout.daySlots(year: t.year, month: t.month, mondayFirst: CompanionSettings.weekStartsMonday)
+            .first { $0.day == t.day }.map { (x: $0.x, y: $0.y) } ?? CompanionLayout.rowSlot(0)
         guard let base = await ensureBase(),
               let yearId = await ensureYear(t.year, base: base),
               let monthId = await ensureMonth(t.year, t.month, yearId: yearId, workspace: base.workspace),
-              let onMonth = await rows(of: monthId, subBoardsOnly: true) else {
+              let onMonth = await rows(of: monthId, subBoardsOnly: true),
+              let dayId = await ensureChild(dayTitle, in: monthId, mounted: onMonth, known: companion.registry(ws).days[dayTitle],
+                                            workspace: ws, slot: { slot }) else {
             if state.status.isEmpty { state.setStatus("没能建好 \(dayTitle) 的白板，看日志", error: true) }
-            return
+            return nil
         }
-        let slot = CompanionLayout.daySlots(year: t.year, month: t.month, mondayFirst: CompanionSettings.weekStartsMonday)
-            .first { $0.day == t.day }.map { (x: $0.x, y: $0.y) } ?? CompanionLayout.rowSlot(0)
-        guard let dayId = await ensureChild(dayTitle, in: monthId, mounted: onMonth, known: companion.registry(ws.id).days[dayTitle],
-                                            workspace: ws.id, slot: { slot }) else { return }
-        companion.update(ws.id) { $0.days[dayTitle] = dayId }
-        await openBoard(id: dayId, title: dayTitle)
-        fillYear(t.year)
+        companion.update(ws) { $0.days[dayTitle] = dayId }
+        return dayId
     }
 
     /// "本月": opens this month's calendar board, creating the path to it like `openDay`.

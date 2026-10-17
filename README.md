@@ -272,6 +272,10 @@ workspace-Companion
   三个并发、实测 74 秒；补过的月份记在 `filledMonths`，不再重读）。今天的白板已经在了就只读一次月白板确认它还挂着，然后跳。
 - **昨天 / 明天**（`昨天` `yesterday` `zuotian`，`明天` `tomorrow` `mingtian`）：同"今天"，只是日期前后挪一天，跨年时补的是那一年；
   **本月**（`本月` `this month` `日历` `benyue`）跳到这个月的日历白板。
+- **记到某天**（`记到某天` `记到日记` `安排` `schedule` `jidao`）：⏎ 后输入框和"添加待办"一样（日期写在开头或末尾，Tab 补全），
+  再 ⏎ 就在那天的日白板上贴一张 `@todo(due: 那天) 内容` 文字卡，不写日期就是今天；人留在当前白板，不跳过去。日白板缺哪层建哪层
+  （同"今天"）。卡片贴在板上已有卡片的下面、左边对齐（间隔 24pt），所以一天里的条目按添加顺序从上往下排。贴完把那块日白板读回来
+  交给 `TodoIndex`，"全部待办"和到期提醒立刻就有，`BoardIndex` 里它的卡片数也随之更新，免得定时扫描把它当空白板跳过。
 - **新建项目**：⏎ 后输入名字，建一块 `project-<名字>` 白板放进 Todo（设置里可改成 Doing），排在网格最前。
 - **完成 / 移到 Doing / 移到 Todo**：作用于选中的 project 卡片；没选中 project 时作用于当前所在的 project 白板。
   CLI 不能把卡片挪到另一块白板，做法是把同一块白板文档挂到目标列表（`card-create --document`），再删掉原来那张卡；
@@ -454,8 +458,8 @@ Sources/AllumeCompanion/
   AllumeCLI.swift                  经 open -W 调 allume（原因见上）；前台/后台调用计数
   BoardIndex.swift                 标题 → 白板文档 id 表：BFS 爬取、boards.json 缓存、限频重爬
   BoardModel.swift                 当前白板的卡片副本（BoardCard 行）：解析标题、四种刷新时机、缩略图预热
-  Companion.swift                  日记与项目：CompanionLayout（标题、日历和网格位置，纯 Foundation）、companion.json、今天 / 新建项目 / 改状态
-  CommandRunner.swift              三条命令 + 一层撤销（执行前记 frame，优先用新鲜的模型）；describeSelection 先查模型再回退 CLI；openBoard 跳白板、goHome 回首页、addTodo 贴待办
+  Companion.swift                  日记与项目：CompanionLayout（标题、日历和网格位置，纯 Foundation）、companion.json、今天 / 记到某天 / 新建项目 / 改状态
+  CommandRunner.swift              三条命令 + 一层撤销（执行前记 frame，优先用新鲜的模型）；describeSelection 先查模型再回退 CLI；openBoard 跳白板、goHome 回首页、addTodo 贴待办（addTodoToDay 在 Companion.swift）
   VisitTrail.swift                 足迹：换白板记一条（trail.json），"最近去过"列表的数据
   TodoIndex.swift                  全部 @todo 文字卡：每块白板一次 --filter @todo，解析截止日期（todos.json）；TodoDraft 把"添加待办"的输入变成标记行
   DateWords.swift                  自然语言到期日：规则表 + NSDataDetector 兜底，补全和自动替换
@@ -467,7 +471,7 @@ Sources/AllumeCompanion/
   BoardThumbnailRenderer.swift     用 board-content 行离屏画 240×180 的白板缩略（文字、图片、PDF、嵌套白板），按白板 id 缓存到内存 + thumbs/ 目录
   OverlayController.swift          命令面板 NSPanel 及定位
   CommandCatalog.swift             命令表、多语言别名、参数解析（纯 Swift，可单独 swiftc 测）
-  Views.swift                      SwiftUI：CommandPanelView（输入框 + 行列表，五种模式：命令 / 最近去过 / 全部待办 / 添加待办 / 新建项目）、CardStackView / CardFace（缩略图、正文、图标三种面）
+  Views.swift                      SwiftUI：CommandPanelView（输入框 + 行列表，六种模式：命令 / 最近去过 / 全部待办 / 添加待办 / 记到某天 / 新建项目）、CardStackView / CardFace（缩略图、正文、图标三种面）
   Log.swift                        ~/Library/Logs/AllumeCompanion.log
 ```
 
