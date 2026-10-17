@@ -49,17 +49,26 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
 ## 发布（Release）
 
 ```bash
-scripts/release.sh 0.0.1            # 打包到 dist/AllumeCompanion-0.0.1.zip，不发布
-scripts/release.sh 0.0.1 --publish  # 另外打 tag v0.0.1、push、建 GitHub Release 并上传 zip
+scripts/release.sh 0.0.3            # 打包、签名、公证到 dist/AllumeCompanion-0.0.3.zip，不发布
+scripts/release.sh 0.0.3 --publish  # 另外打 tag v0.0.3、push、建 GitHub Release 并上传 zip
 ```
 
 脚本做的事：把版本号写进 `Resources/Info.plist`（`CFBundleShortVersionString` = 版本，`CFBundleVersion` = commit 数）并提交；
-用 **Developer ID Application** 证书签名（hardened runtime + 时间戳），`ditto` 打 zip；`--publish` 时用 `gh` 建 Release，
-说明用 `--generate-notes` 自动生成。用户下载后把 `.app` 拖进"应用程序"运行即可。
+用 **Developer ID Application** 证书签名（hardened runtime + 时间戳），`ditto` 打 zip；交给 Apple 公证并把结果钉进 app
+（staple），再重新打 zip；`--publish` 时用 `gh` 建 Release，说明用 `--generate-notes` 自动生成（想写正经的说明就不带
+`--publish`，自己 `git tag` + `git push` 后用 `gh release create v0.0.3 dist/….zip --notes-file <说明.md>`，v0.0.2 就是这么发的）。
+用户下载后把 `.app` 拖进"应用程序"直接打开即可。
 
-公证（notarization）：设 `NOTARY_PROFILE=<keychain profile>` 后脚本会 `notarytool submit --wait` 并 staple；profile 用
-`xcrun notarytool store-credentials <名字>` 配一次（需要 App 专用密码或 App Store Connect API key）。没公证的版本，
-下载者第一次要右键 → 打开（或 `xattr -d com.apple.quarantine`），Gatekeeper 才放行。
+**公证（notarization）**：脚本默认用钥匙串里名叫 `allume-notary` 的凭据（`notarytool submit --wait`，一般几分钟，然后
+`stapler staple`），最后 `spctl` 应该报 `accepted, source=Notarized Developer ID`。凭据在每台发版的机器上配一次：
+
+1. 在 account.apple.com 用开发者账号的 Apple ID 登录 → 登录与安全 → App 专用密码，生成一个。
+   （命令行工具走不了双重认证，所以要专用密码；也可以改用 App Store Connect 的 API 密钥，见 `xcrun notarytool store-credentials --help`。）
+2. `xcrun notarytool store-credentials allume-notary --apple-id <Apple ID 邮箱> --team-id 8Y832VC4BZ`，提示时粘贴专用密码。
+3. `xcrun notarytool history --keychain-profile allume-notary` 能跑通就配好了。
+
+`NOTARY_PROFILE=<名字>` 换用别的凭据，`NOTARY_PROFILE=`（空）跳过公证；没公证的包下载后第一次要在
+系统设置 → 隐私与安全性 里点"仍要打开"。签名证书上显示的开发者是团队名 "one dao"（Team ID 8Y832VC4BZ），不是账号持有人的姓名。
 
 ## 需要的权限
 

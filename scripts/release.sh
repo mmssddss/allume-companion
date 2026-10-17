@@ -1,10 +1,11 @@
 #!/bin/zsh
-# Package a release: stamp the version, build, sign with Developer ID, zip, optionally
-# notarize, and (with --publish) tag + push + create the GitHub Release.
+# Package a release: stamp the version, build, sign with Developer ID, zip, notarize, and
+# (with --publish) tag + push + create the GitHub Release.
 #
 # Usage: scripts/release.sh <version> [--publish]
-#   NOTARY_PROFILE=<keychain profile>  notarize + staple (set up once with
-#                                      `xcrun notarytool store-credentials <profile>`)
+#   NOTARY_PROFILE=<keychain profile>  notarytool credentials; default allume-notary (set up once
+#                                      with `xcrun notarytool store-credentials allume-notary …`,
+#                                      see README "发布"); NOTARY_PROFILE= (empty) skips notarizing
 #   CODESIGN_IDENTITY=<identity>       override the signing identity
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -12,6 +13,7 @@ VERSION="${1:?usage: scripts/release.sh <version> [--publish]}"
 PUBLISH=0; [[ "${2:-}" == "--publish" ]] && PUBLISH=1
 APP="build/AllumeCompanion.app"
 ZIP="dist/AllumeCompanion-$VERSION.zip"
+NOTARY_PROFILE="${NOTARY_PROFILE-allume-notary}"   # unset → default; set but empty → skip
 
 [[ -z "$(git status --porcelain)" ]] || { echo "working tree not clean; commit first" >&2; exit 1; }
 
@@ -40,7 +42,7 @@ mkdir -p dist
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP" "$ZIP"
 
-# 4. Notarize when a profile is configured; otherwise say what that means for users.
+# 4. Notarize (unless NOTARY_PROFILE is empty); otherwise say what that means for users.
 if [[ -n "${NOTARY_PROFILE:-}" ]]; then
   xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
   xcrun stapler staple "$APP"
