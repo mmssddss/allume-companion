@@ -11,7 +11,7 @@ import Foundation
 /// `board-content --format json` (undo = `card-move` back). Only the
 /// most recent step is kept, and undoing is itself not undoable.
 ///
-/// Where card data comes from (see README "当前白板模型"): `boardModel` holds the current board's
+/// Where card data comes from (see docs/DEVELOPMENT.md "当前白板模型"): `boardModel` holds the current board's
 /// cards. Describing the selection reads from it when every selected card is there; the undo
 /// snapshot only trusts it when it was loaded within `snapshotMaxAge`, otherwise it reads the
 /// board again, because undo must restore the positions the cards really had before the write.

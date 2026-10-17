@@ -4,7 +4,7 @@ import ImageIO
 /// Small previews for the card stack, fetched through the CLI after ⌘K and kept in memory by
 /// card id so a card is never fetched twice while the app runs.
 ///
-/// Where the pixels come from (see README "卡片缩略图从哪来"):
+/// Where the pixels come from (see docs/DEVELOPMENT.md "卡片缩略图从哪来"):
 /// - image: `card-content <id> --contents raw --format json` — the original JPEG/PNG bytes on
 ///   stdout (metadata goes to stderr), downscaled with ImageIO to `maxEdge` px.
 /// - pdf: `card-pdf-page <id> --page 1 --max-dimension 256 --format json` — a PNG on stdout.

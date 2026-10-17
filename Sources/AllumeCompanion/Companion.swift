@@ -1,6 +1,6 @@
 import Foundation
 
-/// Daily notes and projects (README "日记与项目"). The companion keeps its own corner of the
+/// Daily notes and projects (docs/DEVELOPMENT.md "日记与项目"). The companion keeps its own corner of the
 /// workspace, a board titled `workspace-Companion` on the root board:
 ///
 ///     workspace-Companion

@@ -1,7 +1,7 @@
 # Allume Companion
 
 macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所有操作走 `/usr/local/bin/allume` CLI。
-读 README.md 了解原理、权限和脆弱点；下面只记对改代码有用的事。
+读 docs/DEVELOPMENT.md 了解原理、权限和脆弱点（README.md / README.zh-CN.md 是给用户看的）；下面只记对改代码有用的事。
 
 ## 跑起来
 
@@ -54,7 +54,7 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   `DateWords` + `TodoDraft` 是纯 Foundation，可以拼进一个 swiftc 脚本单测。视口靠 `BoardViewport` 用标题 `AXTextField` 拟合，缩放 1 时偏移 x≈窗口 x。
   测：`ALLUME_USR2="todo:内容 明天"` + `kill -USR2`；`ALLUME_USR2="type:交房租 下周"` 往面板输入框填字，配 `ALLUME_SNAPSHOT` 出图；面板快照 `ALLUME_PANEL_MODE=add`（快照分支要求同时设 `ALLUME_SELECT_IDS`）。
   `card-add` / `delete` 直接从终端跑也能写（不用 `open -W`），测完记得 `allume delete <卡片id>`。
-- 当前白板模型（README "当前白板模型"）：`BoardIndex` 用 `list-workspaces` → `board-content --kinds subBoard` BFS 建
+- 当前白板模型（docs/DEVELOPMENT.md "当前白板模型"）：`BoardIndex` 用 `list-workspaces` → `board-content --kinds subBoard` BFS 建
   标题→文档 id 表（缓存在 `~/Library/Application Support/AllumeCompanion/boards.json`），`BoardModel` 用一次 `board-content`
   装入当前白板的卡片。⌘K 的 describeSelection 先查模型；撤销快照只在模型 2 秒内刷新过时用它，否则必须现查。
   后台调用用 `AllumeCLI.run(…, background: true)`，日志里是 `cli[bg]`；每次 ⌘K 打印一行"⌘K 统计"，前台应为 0。
@@ -71,7 +71,7 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   （`optionIncludingWindow` + `panel.windowNumber`；`boundsIgnoreFraming` 不含阴影），抓出来的图里玻璃背后的内容是空的。
 - 测试面板外观：`ALLUME_SELECT_IDS=… ALLUME_SNAPSHOT=/path.png open build/AllumeCompanion.app`，再 `kill -USR1`，
   面板会渲染成 PNG（`screencapture` 在这里没有屏幕录制权限）。加 `ALLUME_PANEL_MODE=todos|recent` 直接打开那张列表。
-- 导航三件套（README "导航"）：`VisitTrail`（trail.json）由 `BoardModel.onSwitched` 喂；`TodoIndex`（todos.json）在
+- 导航三件套（docs/DEVELOPMENT.md "导航"）：`VisitTrail`（trail.json）由 `BoardModel.onSwitched` 喂；`TodoIndex`（todos.json）在
   `BoardIndex.onCrawled` 之后扫全部白板（`--filter @todo --kinds text`，CLI 的 filter 接受 `@`，子串匹配所以 `@todo(due: …)` 也命中），
   到期日只认标记行 `@todo(due: YYYY-MM-DD)`，正文里散写的日期不算；当前白板由 `onLoaded` 用模型行
   免费更新；`DueReminders`（reminders.json）用 `UNUserNotificationCenter`，只在 .app 包里可用（裸可执行文件没有 bundle id 会崩，
@@ -82,7 +82,7 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   设置窗口"发一条测试通知"直接投一条并记日志（`ALLUME_USR2=test-notification` + `kill -USR2` 同效）。
   提醒开关和时间在 `ReminderSettings`（UserDefaults），触发时刻 = 到期日 + 设置的时分（`TodoIndex` 里的 9 点只是到期日本身）；
   改设置走 `DueReminders.reschedule`（先撤掉所有 `due-` 待发通知再排）。
-- 安装检查（`AllumeInstall.swift`，README "设置"）：`AllumeSetup.detect` 从 `/usr/local/bin/allume` 的链接目标往上找 `.app`，
+- 安装检查（`AllumeInstall.swift`，docs/DEVELOPMENT.md "设置"）：`AllumeSetup.detect` 从 `/usr/local/bin/allume` 的链接目标往上找 `.app`，
   它的 bundle id 写进 `AllumeTracker.bundleID`（以前写死 Setapp 版的 `com.musesoftware.museios-setapp`，现在只是兜底）。
   写入模式没有查询命令、偏好文件也读不到，用 `card-move --id 000…:000…` 探测（只读 → "read-only mode"，可写 → "No card"），
   要 Allume 在运行。测：`ALLUME_FAKE_SETUP=noapp|nocli|readonly` 配 `ALLUME_SETTINGS_SNAPSHOT`。`/Applications/Muse.app` 在本机是
@@ -93,7 +93,7 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   `registerDefaults` 之前就建好了，所以提醒设置只在 `refresh` 里读。登录项用 `SMAppService.mainApp`（没在本机点过开关）。
   出图：`ALLUME_SETTINGS_SNAPSHOT=/path.png open build/AllumeCompanion.app`（用 `OverlayController.capturePNG` 抓自己的窗口）。
   面板模式在 `AppState.panelMode`，Esc 在列表里是返回不是关闭。
-- 面板列表（README "命令面板"）：窗口只有一个尺寸（`PanelMetrics.maxHeight`，列表区固定 8 行高，像 Raycast），打开后
+- 面板列表（docs/DEVELOPMENT.md "命令面板"）：窗口只有一个尺寸（`PanelMetrics.maxHeight`，列表区固定 8 行高，像 Raycast），打开后
   不再改大小、不跳；凡是自己变的都淡入淡出（时长在 `PanelMetrics`）：窗口开关（`showPanel` / `hidePanel` 的 alpha，
   关的途中再 ⌘K 会取消）、⌘C 有结果后各行（AppDelegate 在 `withAnimation` 里把 `selectionPending` 置假；置真和清空选中
   用 `disablesAnimations`，免得在淡入的窗口上淡出旧内容）、输入框左边的图标、右端的选中小卡片、
@@ -108,7 +108,7 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   测各场景：`ALLUME_SELECT_IDS=","`（空选中）/ 一张子白板 id / 多张 id，配 `ALLUME_SNAPSHOT`；打字用 `ALLUME_USR2="type:…"`。
   测打开过程：`ALLUME_FRAMES=<目录> open build/AllumeCompanion.app` 后真按 ⌘K（或 `kill -USR1`），每次打开在
   `<目录>/show-<时间>/` 下每 ~25ms 抓一帧窗口（文件名带 ms 时间和窗口 alpha；图里不含 alpha 和玻璃背后的内容）。
-- 日记与项目（`Companion.swift`，README "日记与项目"）：自己的白板 id 全记在 `companion.json`（按 workspace），只在
+- 日记与项目（`Companion.swift`，docs/DEVELOPMENT.md "日记与项目"）：自己的白板 id 全记在 `companion.json`（按 workspace），只在
   `workspace-Companion` 这棵树里写；改项目状态只认 Todo / Doing / Done 上 `project-` 开头的子白板（现读确认）。
   "挪"卡片 = `card-create --document <白板id>` 挂到目标 + `delete` 原卡，白板内容不丢（实测）。子白板卡默认 200×150、最小约
   120×100；文字卡最小 170×40（再小会被夹回）。`board-create -f id` 只打印 id；`card-create -f json` 输出一行数组。
@@ -118,7 +118,7 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   测：`ALLUME_USR2="今天"`（`昨天` `明天` `本月` 同理）/ `"project:名字"` / `"完成"`（配 `ALLUME_SELECT_IDS`）+ `kill -USR2`，撤销 `kill -INFO`；
   `ALLUME_PANEL_MODE=project` 出新建项目输入框；设置页 `ALLUME_SETTINGS_TAB=companion`。删掉 companion.json 不会重复建
   （会按标题在父白板上认回来），但 `filledMonths` 丢了会把每个月重读一遍。
-- 界面语言（README "构建与运行"）：中英两套，跟随系统语言，不加别的语言。代码里的中文原文就是键：`String(localized: "…")`，
+- 界面语言（docs/DEVELOPMENT.md "构建与运行"）：中英两套，跟随系统语言，不加别的语言。代码里的中文原文就是键：`String(localized: "…")`，
   以及 SwiftUI `Text("…")` / `Button("…")` 的字面量（`LocalizedStringKey`，默认查 main bundle）；把 `String` 变量交给 `Text`
   不会翻译，所以 Settings 的 `checkbox` / `labeled` / `note` / `statusRow` 参数是 `LocalizedStringKey`，运行时拼好的字用 `note(verbatim:)`。
   表在 `Resources/Localizable.xcstrings`（sourceLanguage zh-Hans），build-app.sh 用 `xcrun xcstringstool compile` 编进

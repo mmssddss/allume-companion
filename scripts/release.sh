@@ -5,7 +5,7 @@
 # Usage: scripts/release.sh <version> [--publish]
 #   NOTARY_PROFILE=<keychain profile>  notarytool credentials; default allume-notary (set up once
 #                                      with `xcrun notarytool store-credentials allume-notary …`,
-#                                      see README "发布"); NOTARY_PROFILE= (empty) skips notarizing
+#                                      see docs/DEVELOPMENT.md "发布"); NOTARY_PROFILE= (empty) skips notarizing
 #   CODESIGN_IDENTITY=<identity>       override the signing identity
 set -euo pipefail
 cd "$(dirname "$0")/.."
