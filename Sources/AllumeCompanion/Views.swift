@@ -10,6 +10,8 @@ extension Notification.Name {
     /// Posted by the view with the height it wants (`object` is a CGFloat); the panel resizes
     /// from its top edge so the search row never moves and only the list scrolls.
     static let panelHeight = Notification.Name("AllumeCompanion.panelHeight")
+    /// Test hook (`ALLUME_USR2=type:<text>`): puts `object` (a String) into the panel's field.
+    static let panelQuery = Notification.Name("AllumeCompanion.panelQuery")
 }
 
 /// Allume's own palette, so the panel reads as part of it rather than a generic blue sheet.
@@ -69,23 +71,52 @@ struct CommandPanelView: View {
         case .commands: return matches.map(commandRow)
         case .recentBoards: return filtered(state.recentBoards.map(boardRow))
         case .allTodos: return filtered(state.todos.map(todoRow))
-        case .addTodo: return [addTodoRow]
+        case .addTodo: return addTodoRows
         }
     }
 
-    /// The one row of the "添加待办" field: what will be added, where, and when it is due.
-    private var addTodoRow: PanelRow {
+    /// The "添加待办" field's rows: first what ⏎ adds (the exact body that will be written, the
+    /// same `@todo(due: …) 内容` line `TodoIndex` reads), then the date phrases the half-typed
+    /// tail could become (`下周` → 下周一 … 下周日); picking one, or Tab for the first, swaps the
+    /// tail for its date. A finished phrase is swapped as soon as it is typed (`autoReplaceDate`).
+    private var addTodoRows: [PanelRow] {
         let raw = query // runSelected clears the field before the row runs
         let draft = TodoDraft.parse(raw)
         let board = runner.boardModel?.title ?? state.boardTitle
         let place = board.isEmpty ? "当前白板" : "「\(board)」"
-        return PanelRow(id: "add-todo", symbol: "plus.circle",
-                        title: draft.text.isEmpty ? "输入待办内容" : draft.text,
-                        hint: draft.text.isEmpty ? "⏎ 贴到\(place)；末尾加日期设到期：明天 / 10-20 / 2026-10-20" : "⏎ 贴到\(place)",
-                        trailing: draft.due.map { "到期 \($0)" }) {
+        let dueText = draft.due.flatMap { iso in DateWords.match(in: iso, atEnd: true).map { DateWords.describe($0.date) } }
+        var rows = [PanelRow(id: "add-todo", symbol: "plus.circle",
+                             title: draft.text.isEmpty ? "输入待办内容" : draft.body,
+                             hint: draft.text.isEmpty ? "⏎ 贴到\(place)；日期写在开头或末尾：明天、下周二、月底、3天后、10-20"
+                                                      : "⏎ 贴到\(place)" + (draft.due == nil ? "；没有到期日" : ""),
+                             trailing: dueText) {
             guard !draft.text.isEmpty else { return }
             Task { await runner.addTodo(raw) }
+        }]
+        if let c = DateWords.completions(for: raw) {
+            for p in c.phrases {
+                let filled = raw.replacingCharacters(in: c.fragment, with: DateWords.iso(p.date))
+                rows.append(PanelRow(id: "date-" + p.text, symbol: "calendar", title: p.text,
+                                     hint: "\(DateWords.iso(p.date)) · \(DateWords.describe(p.date))",
+                                     trailing: rows.count == 1 ? "Tab" : nil) {
+                    query = filled
+                })
+            }
         }
+        return rows
+    }
+
+    /// Tab in the "添加待办" field: take the highlighted date suggestion, or the first one.
+    private func acceptDate() -> Bool {
+        let list = addTodoRows
+        guard list.count > 1 else { return false }
+        list[selectedIndex > 0 && list.indices.contains(selectedIndex) ? selectedIndex : 1].run()
+        return true
+    }
+
+    private func autoReplaceDate() {
+        guard state.panelMode == .addTodo, let replaced = DateWords.autoReplace(query) else { return }
+        query = replaced
     }
 
     private func filtered(_ rows: [PanelRow]) -> [PanelRow] {
@@ -148,7 +179,10 @@ struct CommandPanelView: View {
             if selectedIndex != 0 { selectedIndex = 0 }
             if state.panelMode != .commands { state.panelMode = .commands }
         }
-        .onChange(of: query) { _, _ in selectedIndex = 0 }
+        .onReceive(NotificationCenter.default.publisher(for: .panelQuery)) { note in
+            if let s = note.object as? String { query = s }
+        }
+        .onChange(of: query) { _, _ in selectedIndex = 0; autoReplaceDate() }
         .onChange(of: state.panelMode) { _, _ in query = ""; selectedIndex = 0; fieldFocused = true }
         .onAppear { postHeight() }
         .onChange(of: rows.count) { _, _ in postHeight() }
@@ -188,7 +222,10 @@ struct CommandPanelView: View {
                 .onSubmit { runSelected() }
                 .onKeyPress(.downArrow) { move(1); return .handled }
                 .onKeyPress(.upArrow) { move(-1); return .handled }
-                .onKeyPress(.tab) { move(1); return .handled }
+                .onKeyPress(.tab) {
+                    if state.panelMode == .addTodo, acceptDate() { return .handled }
+                    move(1); return .handled
+                }
                 .onKeyPress(.delete) {
                     guard query.isEmpty, state.panelMode != .commands else { return .ignored }
                     state.panelMode = .commands
@@ -203,7 +240,7 @@ struct CommandPanelView: View {
     private var footerKeys: String {
         switch state.panelMode {
         case .commands: return "↑↓ 选择 · ⏎ 执行 · Esc 关闭"
-        case .addTodo: return "⏎ 添加 · Esc 返回"
+        case .addTodo: return "⏎ 添加 · Tab 补全日期 · Esc 返回"
         default: return "↑↓ 选择 · ⏎ 跳转 · Esc 返回"
         }
     }
@@ -222,7 +259,7 @@ struct CommandPanelView: View {
         switch state.panelMode {
         case .recentBoards: return "筛选最近去过的白板…"
         case .allTodos: return "筛选待办…"
-        case .addTodo: return "待办内容，末尾可加日期：明天 / 10-20"
+        case .addTodo: return "待办内容，加个日期：下周二 交房租"
         case .commands: return state.selectedCardIds.isEmpty ? "输入命令…" : "对 \(state.selectedCardIds.count) 张卡做什么？排列、大小、撤销…"
         }
     }

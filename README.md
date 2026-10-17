@@ -161,18 +161,27 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 | 列表 | 数据从哪来 | 行 |
 |---|---|---|
 | 最近去过 | `VisitTrail`：`BoardModel` 每次换白板（AX 窗口标题变化并在 `BoardIndex` 里解析成 id）记一条，时间是本 app 的时钟（CLI 没有时间），存在 `~/Library/Application Support/AllumeCompanion/trail.json`，最多 200 条 | 去重后最近的 15 块，不含当前白板；副标题是"3 分钟前"这样的相对时间 |
-| 全部待办 | `TodoIndex`：对 `BoardIndex` 里每块白板跑一次 `board-content <id> --filter @todo --kinds text --format json`（4 个并发，后台，79 块约 7 秒），取正文第一行以 `@todo` 开头的文字卡；索引爬完后扫一次，之后每 15 分钟一次，当前白板每次装入模型时顺手更新它那一片（0 次 CLI）；缓存在 `todos.json`，启动即有 | 标题是卡片标题，没有标题就取正文里第一行不是标记也不是日期的字；副标题是所在白板；右侧是到期状态（今天 / 明天 / N 天后 / 已过期 N 天），到期的排最前 |
+| 全部待办 | `TodoIndex`：对 `BoardIndex` 里每块白板跑一次 `board-content <id> --filter @todo --kinds text --format json`（4 个并发，后台，79 块约 7 秒），取正文第一行以 `@todo` 开头的文字卡；索引爬完后扫一次，之后每 15 分钟一次，当前白板每次装入模型时顺手更新它那一片（0 次 CLI）；缓存在 `todos.json`，启动即有 | 标题是卡片标题，没有标题就取标记行里标记后面的字（`@todo(due: …) 交房租` → 交房租），再没有就取下一行；副标题是所在白板；右侧是到期状态（今天 / 明天 / N 天后 / 已过期 N 天），到期的排最前 |
 
-待办的约定和 Claude 的 allume skill 一致：一张待办一张文字卡，正文第一行 `@todo`，完成改成 `@done`；有到期日的写成
-`@todo(due: 2026-10-20)`（括号里的空格随意，日期只认 `YYYY-MM-DD`）。正文别处出现的日期不算到期日，所以备注里写
+待办的约定：一张待办一张文字卡，正文第一行 `@todo 内容`，有到期日的写成 `@todo(due: 2026-10-20) 内容`
+（括号里的空格随意，日期只认 `YYYY-MM-DD`），完成把 `@todo` 改成 `@done`。正文别处出现的日期不算到期日，所以备注里写
 "2026-10-01 开的会"不会触发提醒。
 
-**添加待办**：⏎ 后输入框变成待办内容，再 ⏎ 就用 `card-add --parent <当前白板> --title <内容> --text @todo` 贴一张文字卡
-（照上面的约定：内容是标题，正文只有标记行）。最后一个词是日期就当到期日：`明天`、`后天`、`10-20`、`10/20`、`2026-10-20`
-（月-日已过就算明年），正文写成 `@todo(due: …)`。位置在眼前：Allume 的 AX 树里每张卡的标题是一个屏幕坐标的
-`AXTextField`（整块白板都在树里），把板上只出现一次的标题和模型里的 `frame` 配对，最小二乘解出缩放和偏移
-（`BoardViewport`），窗口画布中心换回白板坐标，再在附近 40pt 网格上找一块不压到别的卡（连标题带）的空位；
-标题不够两个就放在所有卡的右边。菜单栏也有"添加待办…"。
+**添加待办**：⏎ 后输入框变成待办内容，再 ⏎ 就用 `card-add --parent <当前白板> --text "@todo(due: 2026-10-20) 交房租"`
+贴一张没有标题的文字卡，正文就是上面那一行，和"全部待办"解析的格式一样。到期日写在开头或末尾，用自然语言（`DateWords`）：
+
+- 自己的规则表先认：`今天` `明天` `后天` `大后天`、`周二`（下一个周二，含今天）`本周二` `下周二` `下下周二` `上周二`
+  （周、星期、礼拜都行，一周从周一算起）、`下周`（下周一）、`月底` `下月底` `下个月` `年底`、`3天后` `两周后` `1个月后`、
+  `20号` `11月3日`（已过就顺延到下个月 / 明年）、`下个月 2 号` `本月 30 号` `下下个月 1 号`（中文里的空格无所谓；那个月没有 31 号就取月末）、`10-20` `10/20` `2026-10-20`。
+- 规则表不认的交给系统的 `NSDataDetector`（英文 `next friday`、`in 3 days` 等）。它单独用时认不出 `月底` `3天后`
+  `二十号` `下个月` `10-20`，还把 `next tuesday` 算成美式的"下下周"，所以排在后面。
+- 输入时补全：末尾是半截说法（`下周`、`周`、`月`）时，主行下面列出它能补成的日期，Tab 采纳第一条，↓ 选再 ⏎ 采纳选中的；
+  打完一个不会再变长的说法（`下周二`、`明天`、`3天后`、`20号`、`下个月 2 号`）就当场换成 `2026-10-20` 这样的日期文本；
+  以「月」结尾的（`下个月`）要等后面的几号，不会先被换掉。
+
+位置在眼前：Allume 的 AX 树里每张卡的标题是一个屏幕坐标的 `AXTextField`（整块白板都在树里），把板上只出现一次的标题
+和模型里的 `frame` 配对，最小二乘解出缩放和偏移（`BoardViewport`），窗口画布中心换回白板坐标，再在附近 40pt 网格上
+找一块不压到别的卡（连标题带）的空位；标题不够两个就放在所有卡的右边。菜单栏也有"添加待办…"。
 
 **到期提醒**（`DueReminders`）：带 `(due: …)` 的待办各排一条系统通知，在那天 09:00 响（`UNCalendarNotificationTrigger`）；
 已经到期还没提醒过的，扫到时立刻响一次。点通知就 `allume open` 那块白板。哪些（卡片, 日期）已经响过记在 `reminders.json`，
@@ -363,7 +372,8 @@ Sources/AllumeCompanion/
   BoardModel.swift                 当前白板的卡片副本（BoardCard 行）：解析标题、四种刷新时机、缩略图预热
   CommandRunner.swift              三条命令 + 一层撤销（执行前记 frame，优先用新鲜的模型）；describeSelection 先查模型再回退 CLI；openBoard 跳白板、goHome 回首页、addTodo 贴待办
   VisitTrail.swift                 足迹：换白板记一条（trail.json），"最近去过"列表的数据
-  TodoIndex.swift                  全部 @todo 文字卡：每块白板一次 --filter @todo，解析截止日期（todos.json）；TodoDraft 解析"添加待办"的输入
+  TodoIndex.swift                  全部 @todo 文字卡：每块白板一次 --filter @todo，解析截止日期（todos.json）；TodoDraft 把"添加待办"的输入变成标记行
+  DateWords.swift                  自然语言到期日：规则表 + NSDataDetector 兜底，补全和自动替换
   BoardViewport.swift              用标题 AXTextField 拟合缩放/偏移，算出视口中心，找不压卡的空位
   DueReminders.swift               有日期的待办排系统通知，点通知跳白板（reminders.json 记已响过的）
   ThumbnailLoader.swift            按类型取缩略图（image/pdf 字节、subBoard 交给 BoardThumbnailRenderer），NSCache 按卡片 id 缓存

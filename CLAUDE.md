@@ -48,9 +48,11 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   后退/前进（⌘[ / ⌘]，菜单里没有）都会按包含关系重画成正确路径。`open` 每次都压一条历史（同一 id 连开两次就有两条），
   所以 `openBoard` 连开两次再发 ⌘[：落在第二份上，画面不闪，只多一条指向同一白板的前进项。深链接 `allume://…` 试过几种都不导航。
   测跳转：`ALLUME_USR2=open:<白板文档id> open build/AllumeCompanion.app` 后 `kill -USR2`。
-- 添加待办（`CommandRunner.addTodo`）：`card-add` 建的文字卡按内容自动定尺寸（标题 + `@todo(due: …)` 约 181×40），
-  标题画在 `frame` 上方约 25pt，不算进 frame。视口靠 `BoardViewport` 用标题 `AXTextField` 拟合，缩放 1 时偏移 x≈窗口 x。
-  测：`ALLUME_USR2="todo:内容 明天"` + `kill -USR2`；面板快照 `ALLUME_PANEL_MODE=add`（快照分支要求同时设 `ALLUME_SELECT_IDS`）。
+- 添加待办（`CommandRunner.addTodo`）：卡片无标题，正文一行 `@todo(due: YYYY-MM-DD) 内容`，和 `TodoIndex.context` /
+  `dueDate` 读的格式一致；改格式两边一起改。`card-add` 建的文字卡按内容自动定尺寸（约 290×60）；卡片标题画在 `frame`
+  上方约 25pt，不算进 frame。日期说法在 `DateWords`（规则表优先，`NSDataDetector` 兜底，它读的是真实时钟，不吃 `today` 参数）；
+  `DateWords` + `TodoDraft` 是纯 Foundation，可以拼进一个 swiftc 脚本单测。视口靠 `BoardViewport` 用标题 `AXTextField` 拟合，缩放 1 时偏移 x≈窗口 x。
+  测：`ALLUME_USR2="todo:内容 明天"` + `kill -USR2`；`ALLUME_USR2="type:交房租 下周"` 往面板输入框填字，配 `ALLUME_SNAPSHOT` 出图；面板快照 `ALLUME_PANEL_MODE=add`（快照分支要求同时设 `ALLUME_SELECT_IDS`）。
   `card-add` / `delete` 直接从终端跑也能写（不用 `open -W`），测完记得 `allume delete <卡片id>`。
 - 当前白板模型（README "当前白板模型"）：`BoardIndex` 用 `list-workspaces` → `board-content --kinds subBoard` BFS 建
   标题→文档 id 表（缓存在 `~/Library/Application Support/AllumeCompanion/boards.json`），`BoardModel` 用一次 `board-content`

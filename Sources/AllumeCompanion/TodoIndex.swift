@@ -13,9 +13,11 @@ struct TodoItem: Codable, Hashable, Identifiable {
 
     var id: String { cardId }
 
-    /// What the row is called: the card title, else the first non-empty body line after the marker.
+    /// What the row is called: the card title, else what follows the marker on its line
+    /// (`@todo(due: 2026-10-20) 交房租`), else the first non-empty body line after it.
     var label: String {
         if !title.isEmpty { return title }
+        if let c = TodoIndex.context(in: body) { return String(c.prefix(60)) }
         let lines = body.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
         for l in lines.dropFirst() where !l.isEmpty { return String(l.prefix(60)) }
         return "（无标题）"
@@ -86,6 +88,13 @@ final class TodoIndex {
         let line = first.trimmingCharacters(in: .whitespaces) as NSString
         guard let m = marker.firstMatch(in: line as String, range: NSRange(location: 0, length: line.length)) else { return nil }
         return (line, m)
+    }
+
+    /// The words after the marker on its own line, nil when there are none.
+    nonisolated static func context(in body: String) -> String? {
+        guard let (line, m) = markerMatch(body) else { return nil }
+        let rest = line.substring(from: m.range.location + m.range.length).trimmingCharacters(in: .whitespaces)
+        return rest.isEmpty ? nil : rest
     }
 
     /// A card is a todo when the first non-empty line of its body starts with the `@todo` marker.
@@ -193,52 +202,24 @@ final class TodoIndex {
     }
 }
 
-/// What the panel's "添加待办" field becomes: the todo text (the card's title) and a due day
-/// taken from its last word when that is a date: `2026-10-20`, `10-20`, `10/20`, `今天`, `明天`, `后天`.
+/// What the panel's "添加待办" field becomes: one marker line, `@todo(due: 2026-10-20) 交房租`
+/// or `@todo 交房租`, the same shape `TodoIndex` reads back (`dueDate`, `context`). The due day
+/// is a date phrase at either end of the text (`DateWords`: `下周二`, `明天`, `10-20`, …).
 struct TodoDraft: Equatable {
     var text: String
     /// `YYYY-MM-DD`, nil for an undated todo.
     var due: String?
 
-    /// The card body: just the marker line (the skill's convention, see `TodoIndex`).
-    var body: String { due.map { "@todo(due: \($0))" } ?? "@todo" }
+    var body: String { (due.map { "@todo(due: \($0))" } ?? "@todo") + (text.isEmpty ? "" : " " + text) }
 
     nonisolated static func parse(_ raw: String, today: Date = Date()) -> TodoDraft {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let cut = text.rangeOfCharacter(from: .whitespaces, options: .backwards) else { return TodoDraft(text: text) }
-        let last = String(text[cut.upperBound...])
-        var cal = Calendar(identifier: .gregorian); cal.timeZone = .current
-        guard let due = dueDay(last, today: cal.startOfDay(for: today), cal: cal) else { return TodoDraft(text: text) }
-        return TodoDraft(text: text[..<cut.lowerBound].trimmingCharacters(in: .whitespaces), due: due)
-    }
-
-    nonisolated private static func dueDay(_ word: String, today: Date, cal: Calendar) -> String? {
-        let relative = ["今天": 0, "today": 0, "明天": 1, "tomorrow": 1, "后天": 2]
-        var date: Date?
-        if let n = relative[word.lowercased()] {
-            date = cal.date(byAdding: .day, value: n, to: today)
-        } else {
-            let parts = word.split(whereSeparator: { $0 == "-" || $0 == "/" }).map { Int($0) }
-            guard parts.allSatisfy({ $0 != nil }), word.allSatisfy({ $0.isNumber || $0 == "-" || $0 == "/" }) else { return nil }
-            let n = parts.compactMap { $0 }
-            switch n.count {
-            case 3 where n[0] >= 1000: date = valid(year: n[0], month: n[1], day: n[2], cal: cal)
-            case 2:
-                let year = cal.component(.year, from: today)
-                date = valid(year: year, month: n[0], day: n[1], cal: cal)
-                if let d = date, d < today { date = valid(year: year + 1, month: n[0], day: n[1], cal: cal) }
-            default: return nil
-            }
+        for atEnd in [true, false] {
+            guard let m = DateWords.match(in: text, atEnd: atEnd, today: today) else { continue }
+            var rest = text
+            rest.removeSubrange(m.range)
+            return TodoDraft(text: rest.trimmingCharacters(in: .whitespaces), due: DateWords.iso(m.date))
         }
-        guard let date else { return nil }
-        let c = cal.dateComponents([.year, .month, .day], from: date)
-        return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
-    }
-
-    /// The date, unless the components do not name a real day (2-30 rolls over in `Calendar`).
-    nonisolated private static func valid(year: Int, month: Int, day: Int, cal: Calendar) -> Date? {
-        guard let d = cal.date(from: DateComponents(year: year, month: month, day: day)),
-              cal.component(.month, from: d) == month, cal.component(.day, from: d) == day else { return nil }
-        return d
+        return TodoDraft(text: text)
     }
 }

@@ -257,8 +257,8 @@ final class CommandRunner {
 
     // MARK: - Adding a todo
 
-    /// Sticks a todo on the current board: a text card titled with the text whose body is the
-    /// marker line (`@todo` / `@todo(due: …)`, see `TodoDraft`), in the middle of what the user
+    /// Sticks a todo on the current board: an untitled text card whose body is one marker line,
+    /// `@todo(due: 2026-10-20) 交房租` (see `TodoDraft`), in the middle of what the user
     /// sees (`BoardViewport`), nudged to the nearest spot not covering other cards; when the
     /// viewport cannot be solved, right of the board's cards.
     func addTodo(_ raw: String) async {
@@ -272,7 +272,7 @@ final class CommandRunner {
         var x = 80.0, y = 80.0
         if let pid = NSRunningApplication.runningApplications(withBundleIdentifier: AllumeTracker.bundleID).first?.processIdentifier,
            let fit = BoardViewport.fit(pid: pid, rows: model.rows) {
-            // A new todo card comes out about 180×40; leave room for a longer title.
+            // A new todo card comes out about 180×40; leave room for a longer line.
             let spot = BoardViewport.freeSpot(near: fit.center, size: CGSize(width: 240, height: 60), avoiding: model.rows.map(\.frame))
             x = spot.x; y = spot.y
             Log.info("add todo: viewport centre (\(Int(fit.center.x)), \(Int(fit.center.y))) at zoom \(String(format: "%.2f", fit.zoom)) from \(fit.pairs) titles")
@@ -280,7 +280,7 @@ final class CommandRunner {
             x = right + 40; y = top
             Log.info("add todo: viewport not solvable; placing right of the cards")
         }
-        let r = await exec(["card-add", "--parent", boardId, "--title", draft.text, "--text", draft.body,
+        let r = await exec(["card-add", "--parent", boardId, "--text", draft.body,
                             "--x", Self.num(max(0, x.rounded())), "--y", Self.num(max(0, y.rounded())), "--format", "json"],
                            showStdout: false)
         guard r.ok else { return }

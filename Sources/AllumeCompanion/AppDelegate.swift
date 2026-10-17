@@ -173,7 +173,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Test hook: SIGUSR2 runs a panel command on the current selection, like clicking its button.
         // `ALLUME_USR2` is a command query exactly as one would type it in the panel
         // ("grid 4", "resize 300x200", "一行", "undo"); default "排成 3 列". `open:<board id>` jumps there;
-        // `todo:<text>` adds a todo to the current board.
+        // `todo:<text>` adds a todo to the current board; `type:<text>` fills the panel's field
+        // (then snapshots it to ALLUME_SNAPSHOT when set).
         signal(SIGUSR2, SIG_IGN)
         usr2Source = DispatchSource.makeSignalSource(signal: SIGUSR2, queue: .main)
         usr2Source?.setEventHandler { [weak self] in
@@ -184,6 +185,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 let query = env["ALLUME_USR2"] ?? "排成 3 列"
                 if query == "test-notification" { self.reminders.sendTest(); return }
+                if query.hasPrefix("type:") {
+                    NotificationCenter.default.post(name: .panelQuery, object: String(query.dropFirst(5)))
+                    if let path = env["ALLUME_SNAPSHOT"], !path.isEmpty {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.overlay.snapshot(to: path) }
+                    }
+                    return
+                }
                 if query.hasPrefix("todo:") {
                     await self.runner.addTodo(String(query.dropFirst(5)))
                     Log.info("panel log:\n" + self.state.log); return
