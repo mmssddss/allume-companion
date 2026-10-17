@@ -156,23 +156,29 @@ final class OverlayController {
     /// `CGWindowListCreateImage` is looked up with dlsym because the SDK marks it unavailable.
     /// The capture has neither the window's alpha (hence the file name) nor what is behind the glass.
     private func captureFrames() {
-        guard let dir = ProcessInfo.processInfo.environment["ALLUME_FRAMES"], !dir.isEmpty,
-              let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return }
-        typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
-        let capture = unsafeBitCast(sym, to: Capture.self)
+        guard let dir = ProcessInfo.processInfo.environment["ALLUME_FRAMES"], !dir.isEmpty else { return }
         let t0 = Date()
         let run = URL(fileURLWithPath: dir).appendingPathComponent("show-\(Int(t0.timeIntervalSince1970 * 1000))")
         try? FileManager.default.createDirectory(at: run, withIntermediateDirectories: true)
         for i in 0..<16 {
             DispatchQueue.main.asyncAfter(deadline: .now() + Double(i) * 0.025) { [self] in
-                // optionIncludingWindow = 1 << 3, boundsIgnoreFraming = 1 << 0
-                guard let img = capture(.null, 1 << 3, UInt32(panel.windowNumber), 1 << 0)?.takeRetainedValue(),
-                      let png = NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:]) else { return }
+                guard let png = Self.capturePNG(windowNumber: panel.windowNumber) else { return }
                 let ms = Int(Date().timeIntervalSince(t0) * 1000)
-                let alpha = Int(((panel.contentView?.window?.alphaValue ?? 0) * 100).rounded())
+                let alpha = Int((panel.alphaValue * 100).rounded())
                 try? png.write(to: run.appendingPathComponent(String(format: "frame-%02d-%03dms-a%03d.png", i, ms, alpha)))
             }
         }
+    }
+
+    /// PNG of one of this app's own windows, as the window server composites it (no Screen
+    /// Recording needed for our own windows).
+    static func capturePNG(windowNumber: Int) -> Data? {
+        guard let sym = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "CGWindowListCreateImage") else { return nil }
+        typealias Capture = @convention(c) (CGRect, UInt32, UInt32, UInt32) -> Unmanaged<CGImage>?
+        let capture = unsafeBitCast(sym, to: Capture.self)
+        // optionIncludingWindow = 1 << 3, boundsIgnoreFraming = 1 << 0
+        guard let img = capture(.null, 1 << 3, UInt32(windowNumber), 1 << 0)?.takeRetainedValue() else { return nil }
+        return NSBitmapImageRep(cgImage: img).representation(using: .png, properties: [:])
     }
 
     /// Test hook: renders the panel's content view into a PNG at `path`.

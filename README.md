@@ -31,7 +31,20 @@ scripts/run.sh          # swift build -c release → build/AllumeCompanion.app �
   不需要屏幕录制权限）；
   用 `ALLUME_AXDUMP=1 open build/AllumeCompanion.app` 启动后，`kill -USR2` 改为把 Allume 窗口的 Accessibility 树写进日志
   （每个节点的角色、标题/正文、屏幕坐标、焦点/选中态、非标准属性名，以及当前的 `AXFocusedUIElement`）。
-- 它是菜单栏常驻 app（无 Dock 图标），从菜单栏图标里退出。
+- 它是菜单栏常驻 app（无 Dock 图标）。菜单栏图标里只有三项：打开面板 ⌘K、设置… ⌘,、退出。
+  "最近去过""全部待办""回首页""添加待办"都在面板里。
+
+### 设置
+
+`Settings.swift`，一个普通窗口（⌘W 关）：
+
+- **通用**：登录时自动打开（`SMAppService.mainApp`；系统要求批准时给"打开登录项…"按钮）。
+- **权限**：辅助功能、通知各显示是否已允许，没允许时给"打开设置…"。窗口开着时每秒重查，在系统设置里打开后这里立刻变。
+- **到期提醒**：开关和提醒时间（默认 9:00，存在 UserDefaults 的 `reminders.*`），改了就撤掉已排的提醒按新时间重排；发一条测试通知。
+- **待办与缓存**：待办数 / 到期数 / 白板数、上次扫描时间、重新扫描；清空缩略图缓存（内存 + `thumbs/`）；在访达中显示日志。
+- **关于**：版本、Maverick Li 署名、[maverickli.org](https://maverickli.org)、[GitHub](https://github.com/mmssddss/allume-companion)。
+
+测试：`ALLUME_SETTINGS_SNAPSHOT=/path.png open build/AllumeCompanion.app` 启动时打开设置窗口，1.5 秒后把整个窗口写成 PNG。
 
 ## 发布（Release）
 
@@ -55,7 +68,7 @@ scripts/release.sh 0.0.1 --publish  # 另外打 tag v0.0.1、push、建 GitHub R
 | 辅助功能（Accessibility） | 1) `AXObserver` 跟踪 Allume 窗口的位置、尺寸、激活状态，面板才能贴在窗口顶部；2) `CGEvent.postToPid` 向 Allume 发送 ⌘C（以及跳白板后的 ⌘[） | 面板不出现，⌘K 读不到选中 |
 | Allume → Preferences → Command Line 里的读写模式 | `card-gather` / `card-move` 都是写操作 | 面板里显示 `allume card-gather is unavailable: the CLI is in read-only mode`。如果设置里已经是 read-write 还报这个，见下面"CLI 为什么要用 open 启动" |
 
-首次启动会弹系统提示；也可以从菜单栏图标 → "打开辅助功能设置…"。不需要"输入监控"：全局快捷键用的是
+首次启动会弹系统提示；也可以在设置窗口的"权限"里点"打开设置…"。不需要"输入监控"：全局快捷键用的是
 Carbon `RegisterEventHotKey`，不需要额外权限。注册了的全局快捷键会在所有 app 里吞掉这个按键，
 所以 ⌘K 只在 Allume 是前台 app（或命令面板是 key window）时注册，切到别的 app 就注销，别的 app 的 ⌘K 不受影响。
 
@@ -173,7 +186,7 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 ### 导航：最近去过、全部待办、到期提醒
 
 没选中时面板最上面是这四行，可以闭着眼按（有选中时卡片命令在前，它们排在后面）：⌘K ⏎ 是"最近去过"，⌘K ↓ ⏎ 是"全部待办"，
-⌘K ↓↓ ⏎ 是"回首页"（`list-workspaces` 取当前白板所在 workspace 的根白板，跳过去，和 Allume 面包屑第一节一样；菜单栏也有），
+⌘K ↓↓ ⏎ 是"回首页"（`list-workspaces` 取当前白板所在 workspace 的根白板，跳过去，和 Allume 面包屑第一节一样），
 ⌘K ↓↓↓ ⏎ 是"添加待办"（见下）
 （也能输 `最近` / `待办` 直接筛到它们）。⏎ 之后面板换成那张列表，再输字就在列表里筛，⏎ 跳到那块白板
 （`allume open <白板文档id>`，并把 Allume 带到前台，面板关闭；`open` 不会重画 Allume 左上角的面包屑，
@@ -202,12 +215,12 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 
 位置在眼前：Allume 的 AX 树里每张卡的标题是一个屏幕坐标的 `AXTextField`（整块白板都在树里），把板上只出现一次的标题
 和模型里的 `frame` 配对，最小二乘解出缩放和偏移（`BoardViewport`），窗口画布中心换回白板坐标，再在附近 40pt 网格上
-找一块不压到别的卡（连标题带）的空位；标题不够两个就放在所有卡的右边。菜单栏也有"添加待办…"。
+找一块不压到别的卡（连标题带）的空位；标题不够两个就放在所有卡的右边。
 
-**到期提醒**（`DueReminders`）：带 `(due: …)` 的待办各排一条系统通知，在那天 09:00 响（`UNCalendarNotificationTrigger`）；
+**到期提醒**（`DueReminders`）：带 `(due: …)` 的待办各排一条系统通知，在那天的提醒时间响（设置里改，默认 09:00；`UNCalendarNotificationTrigger`）；
 已经到期还没提醒过的，扫到时立刻响一次。点通知就 `allume open` 那块白板。哪些（卡片, 日期）已经响过记在 `reminders.json`，
-不会重复。第一次启动系统会问是否允许通知；拒绝了（或当时把 app 杀了）就在菜单栏"打开通知设置…"里打开，
-下次扫描（菜单"重新扫描待办"或 15 分钟一到）会自动生效，不用重启。日志里 `reminders: authorization status 1` 就是没允许。
+不会重复。第一次启动系统会问是否允许通知；拒绝了（或当时把 app 杀了）就在设置窗口"权限 → 通知 → 打开设置…"里打开，
+下次扫描（设置里"重新扫描"或 15 分钟一到）会自动生效，不用重启。日志里 `reminders: authorization status 1` 就是没允许。
 
 面板是 `NSPanel(.nonactivatingPanel)`，能接键盘但不会把本 app 激活，Allume 保持前台。不提供删除：
 Allume 自己的 Delete 键就是删除，而且带原生 ⌘Z。
@@ -396,7 +409,8 @@ Sources/AllumeCompanion/
   TodoIndex.swift                  全部 @todo 文字卡：每块白板一次 --filter @todo，解析截止日期（todos.json）；TodoDraft 把"添加待办"的输入变成标记行
   DateWords.swift                  自然语言到期日：规则表 + NSDataDetector 兜底，补全和自动替换
   BoardViewport.swift              用标题 AXTextField 拟合缩放/偏移，算出视口中心，找不压卡的空位
-  DueReminders.swift               有日期的待办排系统通知，点通知跳白板（reminders.json 记已响过的）
+  DueReminders.swift               有日期的待办排系统通知，点通知跳白板（reminders.json 记已响过的）；ReminderSettings 开关和时间
+  Settings.swift                   设置窗口：登录时打开、权限状态、到期提醒、待办与缓存、关于
   ThumbnailLoader.swift            按类型取缩略图（image/pdf 字节、subBoard 交给 BoardThumbnailRenderer），NSCache 按卡片 id 缓存
   BoardThumbnailRenderer.swift     用 board-content 行离屏画 240×180 的白板缩略（文字、图片、PDF、嵌套白板），按白板 id 缓存到内存 + thumbs/ 目录
   OverlayController.swift          命令面板 NSPanel 及定位

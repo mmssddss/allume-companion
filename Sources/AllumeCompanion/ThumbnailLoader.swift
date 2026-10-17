@@ -28,6 +28,12 @@ final class ThumbnailLoader {
 
     func cached(_ id: String) -> NSImage? { cache.object(forKey: id as NSString) }
 
+    /// 设置 → 清空缩略图缓存: forgets card thumbnails and every drawn sub-board picture.
+    func clearAll() {
+        cache.removeAllObjects()
+        boards.clear()
+    }
+
     /// The thumbnail for `card`, from the cache or the CLI; nil for kinds without one or on
     /// failure. Concurrent requests for the same card share one fetch.
     /// `background` marks the CLI calls as prewarming (see `AllumeCLI.Counts`).

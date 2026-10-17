@@ -1,9 +1,34 @@
 import AppKit
 import UserNotifications
 
+/// The 设置 window's reminder options, in UserDefaults: on/off and the time of day (default 09:00).
+enum ReminderSettings {
+    private static let d = UserDefaults.standard
+    static func registerDefaults() {
+        d.register(defaults: ["reminders.enabled": true, "reminders.hour": 9, "reminders.minute": 0])
+    }
+    static var enabled: Bool {
+        get { d.bool(forKey: "reminders.enabled") }
+        set { d.set(newValue, forKey: "reminders.enabled") }
+    }
+    static var hour: Int {
+        get { d.integer(forKey: "reminders.hour") }
+        set { d.set(newValue, forKey: "reminders.hour") }
+    }
+    static var minute: Int {
+        get { d.integer(forKey: "reminders.minute") }
+        set { d.set(newValue, forKey: "reminders.minute") }
+    }
+    /// When the reminder for a todo due on `day` goes off.
+    static func fireDate(on day: Date) -> Date {
+        Calendar.current.date(bySettingHour: hour, minute: minute, second: 0, of: day) ?? day
+    }
+}
+
 /// System notifications for `@todo(due: YYYY-MM-DD)` cards. The CLI knows no time at all,
-/// so this is the companion's job alone: each dated todo gets one notification at 09:00 on its
-/// day (`UNCalendarNotificationTrigger`); one already due fires once, now. Clicking the banner
+/// so this is the companion's job alone: each dated todo gets one notification on its day at
+/// the time set in 设置 (`ReminderSettings`, default 09:00; `UNCalendarNotificationTrigger`);
+/// one already due fires once, now. Turned off in 设置, nothing is pending. Clicking the banner
 /// runs `allume open <board>` and brings Allume forward. Which (card, due day) pairs were already
 /// delivered is remembered in reminders.json so a scan never re-fires them.
 @MainActor
@@ -36,7 +61,7 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
                 guard let self else { return }
                 Log.info("reminders: authorization status \(settings.authorizationStatus.rawValue) (0 = not asked yet, 1 = denied, 2 = allowed); alert \(settings.alertSetting.rawValue), banner-in-center \(settings.notificationCenterSetting.rawValue), sound \(settings.soundSetting.rawValue)")
                 if settings.authorizationStatus == .denied, settings.alertSetting != .enabled {
-                    Log.info("reminders: notifications are off for this app; turn them on in 系统设置 → 通知 → Allume Companion (menu: 打开通知设置…)")
+                    Log.info("reminders: notifications are off for this app; turn them on in 系统设置 → 通知 → Allume Companion (设置窗口里有按钮)")
                 }
                 if settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
                     || settings.alertSetting == .enabled {
@@ -59,9 +84,24 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
 
     private static let dayKey: DateFormatter = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f }()
 
+    /// Settings changed (on/off, time): drop every pending reminder and schedule again.
+    func reschedule(_ todos: [TodoItem]) {
+        guard Self.available else { return }
+        let center = UNUserNotificationCenter.current()
+        center.getPendingNotificationRequests { pending in
+            let ours = pending.map(\.identifier).filter { $0.hasPrefix(Self.idPrefix) }
+            center.removePendingNotificationRequests(withIdentifiers: ours)
+            Task { @MainActor in
+                Log.info("reminders: settings changed (\(ReminderSettings.enabled ? String(format: "on, %02d:%02d", ReminderSettings.hour, ReminderSettings.minute) : "off")); removed \(ours.count) pending")
+                self.schedule(todos)
+            }
+        }
+    }
+
     /// Reconciles pending notifications with the current todo list.
     func schedule(_ todos: [TodoItem]) {
         guard Self.available else { return }
+        guard ReminderSettings.enabled else { removeAllPending(); return }
         let center = UNUserNotificationCenter.current()
         // Asked live, so flipping the switch in 系统设置 takes effect at the next scan, no relaunch.
         center.getNotificationSettings { [weak self] settings in
@@ -78,6 +118,23 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Turned off: nothing of ours stays pending.
+    private func removeAllPending() {
+        UNUserNotificationCenter.current().getPendingNotificationRequests { pending in
+            let ours = pending.map(\.identifier).filter { $0.hasPrefix(Self.idPrefix) }
+            if !ours.isEmpty { UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ours) }
+        }
+    }
+
+    /// What 设置 shows next to 通知: whether this app may post them.
+    enum Permission { case unavailable, allowed, denied, notAsked }
+    static func permission() async -> Permission {
+        guard available else { return .unavailable }
+        let s = await UNUserNotificationCenter.current().notificationSettings()
+        if s.authorizationStatus == .authorized || s.authorizationStatus == .provisional || s.alertSetting == .enabled { return .allowed }
+        return s.authorizationStatus == .notDetermined ? .notAsked : .denied
+    }
+
     private func reconcile(_ todos: [TodoItem], center: UNUserNotificationCenter) {
         let dated = todos.filter { $0.due != nil }
         let wanted = Set(dated.map { Self.idPrefix + $0.cardId })
@@ -91,8 +148,9 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
     private func add(_ dated: [TodoItem], center: UNUserNotificationCenter, pendingIds: Set<String>) {
         var fired = 0, queued = 0
         for t in dated {
-            guard let due = t.due else { continue }
-            let key = t.cardId + "|" + Self.dayKey.string(from: due)
+            guard let day = t.due else { continue }
+            let due = ReminderSettings.fireDate(on: day)
+            let key = t.cardId + "|" + Self.dayKey.string(from: day)
             let id = Self.idPrefix + t.cardId
             let content = UNMutableNotificationContent()
             content.title = t.label
@@ -116,7 +174,7 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
-    /// Menu "发一条测试通知": delivers one now and logs what the system says, so a permission
+    /// 设置 "发一条测试通知": delivers one now and logs what the system says, so a permission
     /// problem shows up as the system's own error text instead of silence.
     func sendTest() {
         guard Self.available else { Log.info("reminders: test skipped, not in an .app bundle"); return }

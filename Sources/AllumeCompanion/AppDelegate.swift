@@ -21,8 +21,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var usr1Source: DispatchSourceSignal?
     private var usr2Source: DispatchSourceSignal?
     private var infoSource: DispatchSourceSignal?
+    private let settings = SettingsWindowController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        ReminderSettings.registerDefaults()
         runner = CommandRunner(state: state)
         overlay = OverlayController(state: state, runner: runner)
         // Current-board model: the index maps the window title to a board id (cached in
@@ -85,7 +87,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         boardIndex.refresh(reason: "launch")
         overlay.prewarm()
         setupStatusItem()
+        setupSettings()
         requestAccessibility()
+        // Test hook: `ALLUME_SETTINGS_SNAPSHOT=/path.png` opens 设置 at launch and writes the
+        // window (title bar included) there a moment later.
+        if let path = ProcessInfo.processInfo.environment["ALLUME_SETTINGS_SNAPSHOT"], !path.isEmpty {
+            settings.show()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                guard let n = self?.settings.windowNumber, let png = OverlayController.capturePNG(windowNumber: n) else { return }
+                try? png.write(to: URL(fileURLWithPath: path))
+                Log.info("settings snapshot → \(path)")
+            }
+        }
 
         tracker.onChange = { [weak self] info in
             Task { @MainActor in
@@ -337,33 +350,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.button?.image = NSImage(systemSymbolName: "rectangle.3.group", accessibilityDescription: "Allume Companion")
         let menu = NSMenu()
-        menu.addItem(withTitle: "读取选中并打开面板  ⌘K", action: #selector(menuRead), keyEquivalent: "")
-        menu.addItem(withTitle: "最近去过…", action: #selector(menuRecent), keyEquivalent: "")
-        menu.addItem(withTitle: "全部待办…", action: #selector(menuTodos), keyEquivalent: "")
-        menu.addItem(withTitle: "回首页", action: #selector(menuHome), keyEquivalent: "")
-        menu.addItem(withTitle: "添加待办…", action: #selector(menuAddTodo), keyEquivalent: "")
-        menu.addItem(withTitle: "重新扫描待办", action: #selector(menuRescan), keyEquivalent: "")
-        menu.addItem(withTitle: "发一条测试通知", action: #selector(menuTestNotification), keyEquivalent: "")
-        menu.addItem(withTitle: "打开辅助功能设置…", action: #selector(openAXSettings), keyEquivalent: "")
-        menu.addItem(withTitle: "打开通知设置…（到期提醒）", action: #selector(openNotificationSettings), keyEquivalent: "")
+        menu.addItem(withTitle: "打开面板  ⌘K", action: #selector(menuRead), keyEquivalent: "")
+        menu.addItem(withTitle: "设置…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(.separator())
         menu.addItem(withTitle: "退出 Allume Companion", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem.menu = menu
     }
 
-    @objc private func menuRead() { readSelectionAndShow() }
-    @objc private func menuRecent() { state.panelMode = .recentBoards; readSelectionAndShow() }
-    @objc private func menuTodos() { state.panelMode = .allTodos; readSelectionAndShow() }
-    @objc private func menuAddTodo() { state.panelMode = .addTodo; readSelectionAndShow() }
-    @objc private func menuHome() { Task { await runner.goHome() } }
-    @objc private func menuRescan() { todoIndex.refresh(index: boardIndex, reason: "menu") }
-    @objc private func menuTestNotification() { reminders.sendTest() }
-
-    @objc private func openNotificationSettings() { DueReminders.openSettings() }
-
-    @objc private func openAXSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
+    /// The 设置 window's actions; its live facts come from the todo and board indexes.
+    private func setupSettings() {
+        let m = settings.model
+        m.rescanTodos = { [weak self] in
+            guard let self else { return }
+            self.todoIndex.refresh(index: self.boardIndex, reason: "settings")
+            self.settings.model.refresh()
+        }
+        m.sendTestNotification = { [weak self] in self?.reminders.sendTest() }
+        m.clearThumbnails = { [weak self] in self?.runner.thumbnails.clearAll() }
+        m.remindersChanged = { [weak self] in
+            guard let self else { return }
+            self.reminders.reschedule(self.todoIndex.items)
+        }
+        m.indexFacts = { [weak self] in
+            guard let self else { return (0, 0, nil, false, 0) }
+            return (self.todoIndex.items.count, self.todoIndex.overdueCount, self.todoIndex.scannedAt,
+                    self.todoIndex.isScanning, self.state.boards.count)
         }
     }
+
+    @objc private func menuRead() { readSelectionAndShow() }
+    @objc private func openSettings() { settings.show() }
+
 }

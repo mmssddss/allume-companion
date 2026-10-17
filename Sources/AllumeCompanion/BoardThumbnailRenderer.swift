@@ -42,6 +42,14 @@ final class BoardThumbnailRenderer: @unchecked Sendable {
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
+    /// Drops the memory cache and every file under `directory` (the next look redraws).
+    func clear() {
+        lock.lock(); memory.removeAll(); lock.unlock()
+        try? FileManager.default.removeItem(at: directory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        Log.info("thumbnails: cache cleared")
+    }
+
     // MARK: - Entry point
 
     /// The board's thumbnail: from memory or disk when the rows have not changed, otherwise

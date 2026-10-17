@@ -77,7 +77,12 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   免费更新；`DueReminders`（reminders.json）用 `UNUserNotificationCenter`，只在 .app 包里可用（裸可执行文件没有 bundle id 会崩，
   `available` 挡住）。通知权限：用户在系统设置里（而不是首次弹窗里）打开后，macOS 26/27 的 `authorizationStatus` 仍是 1（denied），
   但 `alertSetting` 是 enabled 且 `add` 成功，所以判断权限要看 `alertSetting`；`schedule` 每次现查，设置里打开后下次扫描就生效。
-  菜单"发一条测试通知"直接投一条并记日志（`ALLUME_USR2=test-notification` + `kill -USR2` 同效）。
+  设置窗口"发一条测试通知"直接投一条并记日志（`ALLUME_USR2=test-notification` + `kill -USR2` 同效）。
+  提醒开关和时间在 `ReminderSettings`（UserDefaults），触发时刻 = 到期日 + 设置的时分（`TodoIndex` 里的 9 点只是到期日本身）；
+  改设置走 `DueReminders.reschedule`（先撤掉所有 `due-` 待发通知再排）。
+- 设置窗口（`Settings.swift`，菜单栏 → 设置… ⌘,）：`SettingsModel` 的数据窗口开着时每秒 `refresh`；模型在
+  `registerDefaults` 之前就建好了，所以提醒设置只在 `refresh` 里读。登录项用 `SMAppService.mainApp`（没在本机点过开关）。
+  出图：`ALLUME_SETTINGS_SNAPSHOT=/path.png open build/AllumeCompanion.app`（用 `OverlayController.capturePNG` 抓自己的窗口）。
   面板模式在 `AppState.panelMode`，Esc 在列表里是返回不是关闭。
 - 面板列表（README "命令面板"）：窗口只有一个尺寸（`PanelMetrics.maxHeight`，列表区固定 8 行高，像 Raycast），打开后
   不再改大小、不跳；凡是自己变的都淡入淡出（时长在 `PanelMetrics`）：窗口开关（`showPanel` / `hidePanel` 的 alpha，
