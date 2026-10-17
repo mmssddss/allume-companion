@@ -85,7 +85,15 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   `Diagnostics.testedAllume` 和两份 README，三处一起改。`Log.trim` 启动时把超过 4MB 的日志截到最后 1MB。
   测：`ALLUME_USR2=diagnostics` + `kill -USR2`（会覆盖剪贴板）。
 - 第一次建 workspace-Companion 前弹确认框（`confirmCreatingRoot`）；测：`ALLUME_USR2=companion-consent ALLUME_SNAPSHOT=…`。
-- `kill -USR1`（不预设选中时）会先把 Allume 切到前台再按 ⌘K，和真按一样。
+- `kill -USR1`（不预设选中时）会先把 Allume 切到前台再按 ⌘K，和真按一样。用户正在别的 app 里打字时 macOS 不让
+  `activate` 抢前台（实测 `open -b`、AppleScript `activate` 都不生效），这时只能用预设选中的路径出图。
+- 待办在列表里完成 / 推迟（⌘⏎ / ⌥⏎ / ⇧⌥⏎）：`OverlayPanel.sendEvent` 截带修饰键的回车（输入框里 ⌥⏎ 会插换行），
+  `TodoIndex.replacingMarker` 只换第一行标记，`note-update` 写回（markdown 原样，frame 不变），撤销是写回旧正文。
+  测：`ALLUME_USR2="todo-done:<卡片id>"` / `"todo-postpone:<卡片id>:<天数>"`；`postToPid` 给本 app 发的键在别的 app
+  在前台时到不了面板，真按键只能手测。
+- 面板位置在 `PanelPlacement`（纯几何，可 swiftc 单测）：全屏、分屏、窄窗口（最窄 420）、窗口一半在屏外、多屏。
+  `ALLUME_FAKE_WINDOW=x,y,w,h` 假装 Allume 窗口的 frame。AX 读不到窗口位置时（实测 Allume 偶尔这样）`AllumeTracker`
+  用 window server 的 bounds 兜底。
 - 测试面板外观：`ALLUME_SELECT_IDS=… ALLUME_SNAPSHOT=/path.png open build/AllumeCompanion.app`，再 `kill -USR1`，
   面板会渲染成 PNG（`screencapture` 在这里没有屏幕录制权限）。加 `ALLUME_PANEL_MODE=todos|recent` 直接打开那张列表。
 - 导航三件套（docs/DEVELOPMENT.md "导航"）：`VisitTrail`（trail.json）由 `BoardModel.onSwitched` 喂；`TodoIndex`（todos.json）在

@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         reminders = DueReminders()
         refreshRecent(excluding: nil)
         state.todos = todoIndex.sorted
+        runner.todoIndex = todoIndex
         state.boards = boardIndex.refs
         boardModel.onSwitched = { [weak self] id, title in
             guard let self else { return }
@@ -235,6 +236,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if query == "test-notification" { self.reminders.sendTest(); return }
                 if query == "companion-consent" { _ = CommandRunner.confirmCreatingRoot(); return }
                 if query == "diagnostics" { self.copyDiagnostics(); return }
+                // `todo-done:<card id>` / `todo-postpone:<card id>:<days>`: what ⌘⏎ / ⌥⏎ do on that todo's row.
+                if query.hasPrefix("todo-done:") || query.hasPrefix("todo-postpone:") {
+                    let parts = query.split(separator: ":").map(String.init)   // ids contain one ":" themselves
+                    guard parts.count >= 3, let todo = self.todoIndex.items.first(where: { $0.cardId == parts[1] + ":" + parts[2] }) else {
+                        Log.info("test: no todo \(query)"); return
+                    }
+                    if parts[0] == "todo-done" { await self.runner.completeTodo(todo) }
+                    else { await self.runner.postponeTodo(todo, days: parts.count > 3 ? Int(parts[3]) ?? 1 : 1) }
+                    Log.info("panel log:\n" + self.state.log); return
+                }
                 if query.hasPrefix("type:") {
                     NotificationCenter.default.post(name: .panelQuery, object: String(query.dropFirst(5)))
                     if let path = env["ALLUME_SNAPSHOT"], !path.isEmpty {

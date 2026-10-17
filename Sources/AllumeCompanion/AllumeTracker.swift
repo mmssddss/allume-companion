@@ -113,14 +113,38 @@ final class AllumeTracker {
         var minimized: CFTypeRef?
         if AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minimized) == .success,
            (minimized as? Bool) == true { return nil }
-        guard let pos: CGPoint = axValue(window, kAXPositionAttribute, .cgPoint),
-              let size: CGSize = axValue(window, kAXSizeAttribute, .cgSize) else { return nil }
-        // AX coordinates: origin top-left of the primary display. Convert to AppKit.
+        let topLeft: CGRect
+        if let pos: CGPoint = axValue(window, kAXPositionAttribute, .cgPoint),
+           let size: CGSize = axValue(window, kAXSizeAttribute, .cgSize) {
+            topLeft = CGRect(origin: pos, size: size)
+        } else if let bounds = Self.windowServerFrame(pid: app.processIdentifier) {
+            // Seen once: Allume's window came back from AX titled just "Allume", with position
+            // and size unsupported (-25205), until Allume was restarted. The window server still
+            // knows where it is.
+            if !loggedFallback { Log.info("allume window: AX has no frame, using the window server's \(bounds)"); loggedFallback = true }
+            topLeft = bounds
+        } else {
+            return nil
+        }
+        // AX and window-server coordinates: origin top-left of the primary display. Convert to AppKit.
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
-        let frame = CGRect(x: pos.x, y: primaryHeight - pos.y - size.height, width: size.width, height: size.height)
+        let frame = CGRect(x: topLeft.minX, y: primaryHeight - topLeft.maxY, width: topLeft.width, height: topLeft.height)
         var titleRef: CFTypeRef?
         AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
         return WindowInfo(frame: frame, isActive: app.isActive, title: titleRef as? String ?? "")
+    }
+
+    private var loggedFallback = false
+
+    /// The largest on-screen, normal-level window of `pid` as the window server has it (top-left
+    /// origin, like AX). Bounds need no Screen Recording permission; only window names do.
+    private static func windowServerFrame(pid: pid_t) -> CGRect? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else { return nil }
+        return list
+            .filter { ($0[kCGWindowOwnerPID as String] as? pid_t) == pid && ($0[kCGWindowLayer as String] as? Int) == 0 }
+            .compactMap { ($0[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0) } }
+            .filter { $0.width > 200 && $0.height > 200 }
+            .max { $0.width * $0.height < $1.width * $1.height }
     }
 
     private func axValue<T>(_ element: AXUIElement, _ attr: String, _ type: AXValueType) -> T? {

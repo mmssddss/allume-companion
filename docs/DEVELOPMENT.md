@@ -235,6 +235,16 @@ Allume 的卡片不在 Accessibility 树里（只有文字卡暴露为 AXTextAre
 （括号里的空格随意，日期只认 `YYYY-MM-DD`），完成把 `@todo` 改成 `@done`。正文别处出现的日期不算到期日，所以备注里写
 "2026-10-01 开的会"不会触发提醒。
 
+**在列表里完成和推迟**（`CommandRunner.completeTodo` / `postponeTodo`）：待办行上 ⌘⏎ 完成、⌥⏎ 推迟一天、⇧⌥⏎ 推迟一周。
+带修饰键的回车在 `OverlayPanel.sendEvent` 里截下、发 `.panelModifiedReturn` 给面板视图：不能交给输入框，单行文字框里
+⌥⏎ 会插入换行，⌘⏎ 会先被当成菜单快捷键试一遍。做法是先 `card-content` 现读正文（列表可能是几分钟前扫的），
+`TodoIndex.replacingMarker` 只换第一行的标记（`@done` 或 `@todo(due: 新日期)`），其余文字、markdown、行首空格原样，
+再 `note-update --document-id <卡片的 document.id> --body …` 写回（实测粗体、链接、`- [ ]` 都原样保留，frame 不变）。
+推迟从旧到期日和今天里较晚的那天往后数，所以过期的落在明天。撤销条目是一条写回旧正文的 `note-update`；
+`TodoIndex.set(cardId:to:)` 当场改列表（和提醒），不等下次扫描。面板不关，留在列表里接着处理。
+测：`ALLUME_USR2="todo-done:<卡片id>"` / `"todo-postpone:<卡片id>:<天数>"` + `kill -USR2`，撤销 `kill -INFO`。
+真按键只能在 Allume 前台、面板是 key window 时测：用 `postToPid` 发给本 app 的事件在别的 app 在前台时到不了面板。
+
 **添加待办**：⏎ 后输入框变成待办内容，再 ⏎ 就用 `card-add --parent <当前白板> --text "@todo(due: 2026-10-20) 交房租"`
 贴一张没有标题的文字卡，正文就是上面那一行，和"全部待办"解析的格式一样。到期日写在开头或末尾，用自然语言（`DateWords`）：
 
@@ -471,7 +481,13 @@ frame 怎么读：`allume board-content <白板文档id> --format json` 一次�
 - 白板标题来自 Allume 的窗口标题，只有名字没有 id；Allume 若改成固定窗口标题就失效。
 - CLI 经 `open` 启动依赖 `open` 的 `--stdout/--stderr/-W` 行为，退出码靠 stderr 猜；`-W` 偶发连不上刚启动的进程
   （"Unable to block on applications"），`AllumeCLI.run` 重试一次。
-- 面板位置假设 Allume 主窗口顶部 52pt 是标题栏/工具栏，窗口全屏或分屏时没有特别处理。
+- 面板位置（`PanelPlacement`，纯 CoreGraphics）：在 Allume 窗口露在屏幕上的部分里居中，离窗口顶边至少 52pt（标题栏 /
+  工具栏，全屏时工具栏也还在），宽 640、窄窗口（分屏）跟着收到最窄 420，左右不出屏幕。面板的 `collectionBehavior` 带
+  `.fullScreenAuxiliary` + `.canJoinAllSpaces`，能盖在全屏的 Allume 上。几何可以拼一个 swiftc 脚本单测；看渲染用
+  `ALLUME_FAKE_WINDOW=x,y,w,h`（AppKit 坐标）假装 Allume 窗口是那个框，配 `ALLUME_SNAPSHOT`。真的全屏 / 分屏没在本机点过。
+- 窗口位置读不到时（实测一次：Allume 的焦点窗口在 AX 里标题只剩 "Allume"，位置和大小都是 -25205，重启 Allume 前一直这样），
+  `AllumeTracker` 改用 `CGWindowListCopyWindowInfo` 里 Allume 最大的那个屏上窗口（只取 bounds 不要屏幕录制权限），日志
+  `AX has no frame, using the window server's …`。这时窗口标题是 "Allume"，当前白板认不出来，依赖它的命令会说还不知道当前白板。
 - AX 坐标按主显示器左上角换算成 AppKit 坐标，多显示器下已考虑，但只跟踪 `AXFocusedWindow`（否则 `AXMainWindow`）。
 
 ## 代码结构
@@ -505,7 +521,8 @@ Sources/AllumeCompanion/
   AllumeInstall.swift              AllumeSetup：从 CLI 链接找到 Allume.app 和 bundle id；CLI 写入模式探测
   ThumbnailLoader.swift            按类型取缩略图（image/pdf 字节、subBoard 交给 BoardThumbnailRenderer），NSCache 按卡片 id 缓存
   BoardThumbnailRenderer.swift     用 board-content 行离屏画 240×180 的白板缩略（文字、图片、PDF、嵌套白板），按白板 id 缓存到内存 + thumbs/ 目录
-  OverlayController.swift          命令面板 NSPanel 及定位
+  OverlayController.swift          命令面板 NSPanel（带修饰键的回车在 sendEvent 里截下）
+  PanelPlacement.swift             面板放在哪：全屏、分屏、窄窗口、多屏（纯几何）
   CommandCatalog.swift             命令表、多语言别名、参数解析（纯 Swift，可单独 swiftc 测）
   Views.swift                      SwiftUI：CommandPanelView（输入框 + 行列表，六种模式：命令 / 最近去过 / 全部待办 / 添加待办 / 记到某天 / 新建项目）、CardStackView / CardFace（缩略图、正文、图标三种面）
   Log.swift                        ~/Library/Logs/AllumeCompanion.log（启动时超过 4MB 截到最后 1MB）

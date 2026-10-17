@@ -9,6 +9,8 @@ extension Notification.Name {
     static let panelReset = Notification.Name("AllumeCompanion.panelReset")
     /// Test hook (`ALLUME_USR2=type:<text>`): puts `object` (a String) into the panel's field.
     static let panelQuery = Notification.Name("AllumeCompanion.panelQuery")
+    /// Posted by OverlayPanel for ⏎ with ⌘ or ⌥ (`object`: the NSEvent.ModifierFlags raw value).
+    static let panelModifiedReturn = Notification.Name("AllumeCompanion.panelModifiedReturn")
 }
 
 /// Allume's own palette, so the panel reads as part of it rather than a generic blue sheet.
@@ -87,6 +89,9 @@ struct PanelRow: Identifiable {
     var accessory: String? = nil
     var accessoryIsUrgent = false
     var action = String(localized: "执行")
+    /// Todo rows only: ⌘⏎ marks it done, ⌥⏎ postpones it a day (⇧⌥⏎ a week); the argument is days.
+    var complete: (() -> Void)? = nil
+    var postpone: ((Int) -> Void)? = nil
     let run: () -> Void
 }
 
@@ -299,7 +304,7 @@ struct CommandPanelView: View {
                         accessory: accessory, accessoryIsUrgent: urgent, action: action) {
             switch m.kind {
             case .recentBoards: state.panelMode = .recentBoards
-            case .allTodos: state.panelMode = .allTodos
+            case .allTodos: state.setStatus(""); state.panelMode = .allTodos
             case .addTodo: state.panelMode = .addTodo
             case .addToDay: state.panelMode = .addToDay
             case .addProject: state.panelMode = .addProject
@@ -332,7 +337,9 @@ struct CommandPanelView: View {
         return PanelRow(id: idPrefix + t.cardId, symbol: (days ?? 1) <= 0 ? "exclamationmark" : "checkmark",
                         tint: (days ?? 1) <= 0 ? .red : .orange,
                         title: t.label, hint: t.boardTitle,
-                        accessory: t.dueLabel ?? String(localized: "待办"), accessoryIsUrgent: (days ?? 1) <= 0, action: String(localized: "跳到白板")) {
+                        accessory: t.dueLabel ?? String(localized: "待办"), accessoryIsUrgent: (days ?? 1) <= 0, action: String(localized: "跳到白板"),
+                        complete: { Task { await runner.completeTodo(t) } },
+                        postpone: { days in Task { await runner.postponeTodo(t, days: days) } }) {
             Task { await runner.openBoard(id: t.boardId, title: t.boardTitle, verify: true) }
         }
     }
@@ -361,7 +368,12 @@ struct CommandPanelView: View {
         .onReceive(NotificationCenter.default.publisher(for: .panelQuery)) { note in
             if let s = note.object as? String { query = s }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .panelModifiedReturn)) { note in
+            modifiedReturn(NSEvent.ModifierFlags(rawValue: note.object as? UInt ?? 0))
+        }
         .onChange(of: query) { _, _ in selectedIndex = 0; autoReplaceDate() }
+        // A todo completed from the list leaves it: keep the highlight on the row that took its place.
+        .onChange(of: rows.count) { _, n in if selectedIndex >= n { selectedIndex = max(0, n - 1) } }
         .onChange(of: state.panelMode) { _, _ in query = ""; selectedIndex = 0; fieldFocused = true }
     }
 
@@ -574,6 +586,13 @@ struct CommandPanelView: View {
         HStack(spacing: 8) {
             footerLeft
             Spacer(minLength: 12)
+            if !listHidden, rows.indices.contains(selectedIndex), rows[selectedIndex].complete != nil {
+                Text("完成").font(.system(size: 12)).foregroundStyle(Theme.text2)
+                KeyCap("⌘↩")
+                Text("推迟一天").font(.system(size: 12)).foregroundStyle(Theme.text2)
+                KeyCap("⌥↩")
+                Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 14).padding(.horizontal, 4)
+            }
             if !listHidden, rows.indices.contains(selectedIndex) {
                 Text(rows[selectedIndex].action).font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.text1)
                 KeyCap("↩")
@@ -594,7 +613,7 @@ struct CommandPanelView: View {
 
     @ViewBuilder private var footerLeft: some View {
         HStack(spacing: 6) {
-            if state.panelMode == .commands, !state.status.isEmpty {
+            if state.panelMode == .commands || state.panelMode == .allTodos, !state.status.isEmpty {
                 Image(systemName: state.statusIsError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
                     .foregroundStyle(state.statusIsError ? Color.orange : Color.green)
                 Text(state.status).foregroundStyle(Theme.text2)
@@ -617,6 +636,14 @@ struct CommandPanelView: View {
         let n = rows.count
         guard n > 0 else { return }
         selectedIndex = (selectedIndex + delta + n) % n
+    }
+
+    /// ⌘⏎ marks the highlighted todo done, ⌥⏎ postpones it a day, ⇧⌥⏎ a week; on other rows nothing.
+    private func modifiedReturn(_ mods: NSEvent.ModifierFlags) {
+        guard !listHidden, rows.indices.contains(selectedIndex) else { return }
+        let row = rows[selectedIndex]
+        if mods.contains(.command), let complete = row.complete { complete() }
+        else if mods.contains(.option), let postpone = row.postpone { postpone(mods.contains(.shift) ? 7 : 1) }
     }
 
     private func runSelected() {

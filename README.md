@@ -16,14 +16,16 @@ the canvas.
 - **Jump anywhere**: type part of a board's name to open it, go back to a board you just visited, or
   head home to the top of your workspace.
 - **Todos**: any text card that starts with `@todo` becomes a todo. See them all in one list, add a new
-  one with a due date in plain words ("tomorrow", "Friday", "Oct 20"), and get a reminder on the day.
+  one with a due date in plain words ("tomorrow", "Friday", "Oct 20"), mark it done or postpone it
+  from the list, and get a reminder on the day.
 - **Daily notes**: Today, Yesterday, Tomorrow and This Month open a board for that day or month,
   set up as a calendar for you.
 - **Projects**: keep project boards in Todo / Doing / Done and move them along with one command.
 - **Undo**: changed your mind about an arrangement? Undo puts the cards back.
 
 Press Esc or ⌘K again, or click back into Allume, and the panel goes away. The rest of the time the
-app waits quietly in the menu bar.
+app waits quietly in the menu bar. It works with Allume in full screen and in Split View too; in a
+narrow window the panel gets narrower.
 
 The app is in English or Chinese, following your Mac's language.
 
@@ -72,10 +74,12 @@ To delete cards, use Allume's own Delete key; Allume's ⌘Z brings them back.
 ## Todos
 
 A todo is a text card whose first line starts with `@todo`. To give it a due date, write
-`@todo(due: 2026-10-20) Pay rent`. When it's done, change `@todo` to `@done`.
+`@todo(due: 2026-10-20) Pay rent`. When it's done, it becomes `@done` (from the list, or by hand).
 
 - **All Todos** shows every todo in your workspace, overdue and due ones first. Press Return to go to
-  its board.
+  its board, **⌘Return** to mark it done (`@todo` becomes `@done`; the card stays where it is),
+  **⌥Return** to postpone it a day, or **⇧⌥Return** a week. A todo that is already overdue moves to
+  tomorrow (or a week from today). Undo in the panel puts the card back as it was.
 - **Add Todo** sticks a new todo card in the middle of what you're looking at. Put the date at the
   start or the end: `Pay rent Friday`, `tomorrow Call the bank`, `Renew passport Oct 20`.
 - **Add to Day** puts the todo on that day's daily note instead, and you stay where you are.
@@ -104,7 +108,7 @@ a day for the first time also sets up every month and day board of that year in 
   along.
 
 It never changes boards outside workspace-Companion, apart from arranging and resizing the cards you
-select and adding the todos you ask for.
+select, adding the todos you ask for, and changing the `@todo` line of a todo you mark done or postpone.
 
 ## Privacy
 

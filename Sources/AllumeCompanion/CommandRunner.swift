@@ -22,6 +22,8 @@ final class CommandRunner {
     let thumbnails = ThumbnailLoader()
     /// Set by AppDelegate once the index and model exist.
     var boardModel: BoardModel?
+    /// Updated in place when the panel completes or postpones a todo (AppDelegate sets it).
+    var todoIndex: TodoIndex?
     /// How recent the board model must be for an undo snapshot to use it instead of re-reading.
     static let snapshotMaxAge: TimeInterval = 2
     /// Ids of the companion's own boards (daily notes, projects; Companion.swift).
@@ -324,6 +326,57 @@ final class CommandRunner {
         guard r.ok else { return }
         state.setStatus(String(localized: "已在「\(model.title)」添加待办「\(draft.text)」") + (draft.due.map { String(localized: "，\($0) 到期") } ?? ""))
         Task { await model.refresh(reason: "after add todo") }
+    }
+
+    // MARK: - Completing and postponing a todo
+
+    /// "完成" (⌘⏎ on a todo row): the marker becomes `@done`, the card stays where it is with
+    /// everything else in it. Undo writes the old body back.
+    func completeTodo(_ todo: TodoItem) async {
+        await rewriteTodo(todo, label: String(localized: "完成「\(todo.label)」"),
+                          status: String(localized: "已完成「\(todo.label)」"), marker: "@done")
+    }
+
+    /// "推迟" (⌥⏎ a day, ⇧⌥⏎ a week): the new due day counts from the old one, or from today when
+    /// it is already past or the todo had none, so an overdue todo lands tomorrow, not yesterday.
+    func postponeTodo(_ todo: TodoItem, days: Int) async {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let base = todo.due.map { max(cal.startOfDay(for: $0), today) } ?? today
+        guard let day = cal.date(byAdding: .day, value: days, to: base) else { return }
+        let iso = DateWords.iso(day)
+        let parts = cal.dateComponents([.year, .month, .day], from: day)
+        let weekday = CompanionLayout.weekdayName(year: parts.year ?? 0, month: parts.month ?? 0, day: parts.day ?? 0)
+        await rewriteTodo(todo, label: String(localized: "推迟「\(todo.label)」"),
+                          status: String(localized: "「\(todo.label)」推迟到 \(iso) \(weekday)"), marker: "@todo(due: \(iso))")
+    }
+
+    /// Reads the card fresh (the list may be minutes old), swaps the marker on its first line,
+    /// writes the body back with `note-update`, and keeps the panel open on the list.
+    private func rewriteTodo(_ todo: TodoItem, label: String, status: String, marker: String) async {
+        guard !state.isRunning else { return }
+        state.isRunning = true
+        defer { state.isRunning = false }
+        state.setStatus("")
+        guard let card = await readCard(todo.cardId), let doc = card.document?.id ?? todo.documentId else {
+            if state.status.isEmpty { state.setStatus(String(localized: "读不到这张待办卡，可能已经删了"), error: true) }
+            return
+        }
+        let current = card.document?.body ?? ""
+        guard let body = TodoIndex.replacingMarker(in: current, with: marker) else {
+            state.setStatus(String(localized: "这张卡已经不是待办了"), error: true)
+            todoIndex?.set(cardId: todo.cardId, to: nil)
+            return
+        }
+        guard await exec(["note-update", "--document-id", doc, "--body", body, "--format", "id"], showStdout: false).ok else { return }
+        let before = todo.with(body: current)
+        let after = TodoIndex.isTodo(body) ? todo.with(body: body) : nil
+        todoIndex?.set(cardId: todo.cardId, to: after)
+        undoEntry = UndoEntry(label: label,
+                              commands: [["note-update", "--document-id", doc, "--body", current, "--format", "id"]],
+                              after: { [weak self] in self?.todoIndex?.set(cardId: todo.cardId, to: before) })
+        state.setStatus(status)
+        if boardModel?.boardId == todo.boardId, let model = boardModel { Task { await model.refresh(reason: "after todo update") } }
     }
 
     static func idSuffix(_ id: String) -> String {

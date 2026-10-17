@@ -13,6 +13,12 @@ struct TodoItem: Codable, Hashable, Identifiable {
 
     var id: String { cardId }
 
+    /// The same todo with a new body (after its marker was rewritten).
+    func with(body: String) -> TodoItem {
+        TodoItem(cardId: cardId, documentId: documentId, boardId: boardId, boardTitle: boardTitle,
+                 title: title, body: body, due: TodoIndex.dueDate(in: body))
+    }
+
     /// What the row is called: the card title, else what follows the marker on its line
     /// (`@todo(due: 2026-10-20) 交房租`), else the first non-empty body line after it.
     var label: String {
@@ -97,6 +103,27 @@ final class TodoIndex {
         return rest.isEmpty ? nil : rest
     }
 
+    /// `body` with the marker of its first non-empty line swapped for `marker` (`@done`, or
+    /// `@todo(due: 2026-10-20)`); the words after it and every other line stay as they are, so
+    /// the card's markdown is written back untouched. Nil when the body is not a todo.
+    nonisolated static func replacingMarker(in body: String, with marker: String) -> String? {
+        let ns = body as NSString
+        var start = 0
+        while start < ns.length {
+            let line = ns.lineRange(for: NSRange(location: start, length: 0))
+            let text = ns.substring(with: line)
+            let lead = text.prefix { $0 == " " || $0 == "\t" }.utf16.count
+            let content = (text as NSString).substring(from: lead).trimmingCharacters(in: .newlines)
+            if content.trimmingCharacters(in: .whitespaces).isEmpty { start = NSMaxRange(line); continue }
+            guard let m = Self.marker.firstMatch(in: content, range: NSRange(location: 0, length: (content as NSString).length)) else { return nil }
+            // The pattern ends by consuming one space (or the end of the line): keep that space.
+            var length = m.range.length
+            if length > 0, let last = (content as NSString).substring(with: m.range).last, last.isWhitespace { length -= 1 }
+            return ns.replacingCharacters(in: NSRange(location: line.location + lead, length: length), with: marker)
+        }
+        return nil
+    }
+
     /// A card is a todo when the first non-empty line of its body starts with the `@todo` marker.
     nonisolated static func isTodo(_ body: String?) -> Bool { markerMatch(body) != nil }
 
@@ -126,6 +153,18 @@ final class TodoIndex {
         guard Set(next) != Set(items) else { return }
         items = next
         Log.info("todo index: \"\(boardTitle)\" now has \(fresh.count) @todo (from board model); \(items.count) total")
+        save()
+        onChanged?()
+    }
+
+    /// One card just rewritten by the panel (完成 / 推迟, or their undo): `item` replaces it, nil
+    /// drops it (no longer a todo). Saves the next scan from showing a stale row.
+    func set(cardId: String, to item: TodoItem?) {
+        var next = items.filter { $0.cardId != cardId }
+        if let item { next.append(item) }
+        guard Set(next) != Set(items) else { return }
+        items = next
+        Log.info("todo index: \(cardId) \(item == nil ? "done" : "updated"); \(items.count) total")
         save()
         onChanged?()
     }

@@ -533,6 +533,22 @@
         }
       }
     },
+    "「%@」推迟到 %@ %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Moved “%1$@” to %2$@, %3$@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "「%1$@」推迟到 %2$@ %3$@"
+          }
+        }
+      }
+    },
     "一周从：" : {
       "localizations" : {
         "en" : {
@@ -1071,6 +1087,16 @@
         }
       }
     },
+    "完成「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Complete “%@”"
+          }
+        }
+      }
+    },
     "导航" : {
       "localizations" : {
         "en" : {
@@ -1179,6 +1205,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Completed %@, moved to Done"
+          }
+        }
+      }
+    },
+    "已完成「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Completed “%@”"
           }
         }
       }
@@ -1755,6 +1791,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Arrange in a Row"
+          }
+        }
+      }
+    },
+    "推迟「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Postpone “%@”"
+          }
+        }
+      }
+    },
+    "推迟一天" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Postpone a day"
           }
         }
       }
@@ -2745,6 +2801,16 @@
         }
       }
     },
+    "读不到这张待办卡，可能已经删了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn't read this todo card; it may have been deleted"
+          }
+        }
+      }
+    },
     "读取选中失败：%@" : {
       "localizations" : {
         "en" : {
@@ -2931,6 +2997,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "This Board"
+          }
+        }
+      }
+    },
+    "这张卡已经不是待办了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This card is no longer a todo"
           }
         }
       }

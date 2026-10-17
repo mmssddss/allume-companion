@@ -12,6 +12,19 @@ final class OverlayPanel: NSPanel {
         if event.keyCode == 53 { onEscape?(); return } // Esc
         super.keyDown(with: event)
     }
+    /// ⌘⏎ / ⌥⏎ / ⇧⌥⏎ go to the panel view (complete / postpone the highlighted todo) before the
+    /// field editor sees them: in a text field ⌥⏎ would insert a line break, and ⌘⏎ would be
+    /// tried as a menu key equivalent first.
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, event.keyCode == 36 || event.keyCode == 76 {
+            let mods = event.modifierFlags.intersection([.command, .option, .shift])
+            if mods.contains(.command) || mods.contains(.option) {
+                NotificationCenter.default.post(name: .panelModifiedReturn, object: mods.rawValue)
+                return
+            }
+        }
+        super.sendEvent(event)
+    }
 }
 
 /// Owns the command panel: hidden by default, dropped down from the top of the Allume window
@@ -23,7 +36,6 @@ final class OverlayController {
     private var window: AllumeTracker.WindowInfo?
 
     static let panelSize = CGSize(width: PanelMetrics.width, height: PanelMetrics.maxHeight)
-    static let topInset: CGFloat = 52   // never higher than this below Allume's top edge
     /// True while the panel fades out: it is still on screen but already counts as closed
     /// (⌘K opens it again, cancelling the fade).
     private var hiding = false
@@ -105,6 +117,10 @@ final class OverlayController {
     /// follows the window too (laid out now, off-screen), so the next `showPanel` is a bare
     /// `orderFront` even right after launch or after Allume was resized.
     func update(window: AllumeTracker.WindowInfo?) {
+        var window = window
+        // Test hook: `ALLUME_FAKE_WINDOW=x,y,w,h` (AppKit coordinates) stands in for Allume's
+        // window frame, to see the panel over a full-screen or Split View window.
+        if let fake = Self.fakeWindow, window != nil { window?.frame = fake }
         self.window = window
         guard let window, window.isActive || panel.isKeyWindow else {
             hidePanel()
@@ -113,6 +129,11 @@ final class OverlayController {
         }
         if panel.isVisible { panel.setFrame(panelFrame(for: window.frame), display: true) } else { place(for: window.frame) }
     }
+
+    private static let fakeWindow: CGRect? = {
+        let n = (ProcessInfo.processInfo.environment["ALLUME_FAKE_WINDOW"] ?? "").split(separator: ",").compactMap { Double($0) }
+        return n.count == 4 ? CGRect(x: n[0], y: n[1], width: n[2], height: n[3]) : nil
+    }()
 
     /// Moves the hidden panel to where it would open; redraws only when the size changed.
     private func place(for windowFrame: CGRect) {
@@ -216,12 +237,9 @@ final class OverlayController {
         if let w = window { place(for: w.frame) }
     }
 
-    /// Centered in the Allume window, clamped to stay below the title bar and inside the window.
+    /// Centred in the Allume window (see `PanelPlacement`: full screen, Split View, narrow windows).
     private func panelFrame(for w: CGRect) -> CGRect {
-        let s = Self.panelSize
-        let maxTop = w.maxY - Self.topInset
-        let top = min(maxTop, w.midY + PanelMetrics.maxHeight / 2)
-        let height = min(PanelMetrics.maxHeight, max(120, top - w.minY - 16))
-        return CGRect(x: w.midX - s.width / 2, y: top - height, width: s.width, height: height)
+        let screen = PanelPlacement.screen(for: w, among: NSScreen.screens.map(\.frame))
+        return PanelPlacement.frame(window: w, screen: screen, width: Self.panelSize.width, maxHeight: Self.panelSize.height)
     }
 }
