@@ -55,6 +55,10 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
 - ⌘K 的面板显示时间几乎全是 `setFrame(display: true)` 的重排，AX 查窗口只要 1–2 ms；所以关面板时就 `rearm`（清输入框、
   恢复全部命令、摆好尺寸），打开只剩 `orderFront`（5–15 ms）。日志行 `panel shown at …; setFrame X ms (relaid)` 出现
   "(relaid)" 说明这次重排了。离屏快照（`ALLUME_SNAPSHOT`）渲染不出 `glassEffect`，看玻璃效果只能在屏幕上看。
+- 面板玻璃（macOS 26）是 `NSGlassEffectView` 外包一层圆角 `masksToBounds` 的视图：玻璃自带的软阴影会画到形状外面，
+  被方形窗口边界截住后四角留下约 6% 的黑，看起来是灰色方底，窗口阴影也跟着变成方的。SwiftUI 的 `.glassEffect` 一样有这个问题。
+  检查窗口的 alpha 和阴影形状：app 抓自己的窗口不需要屏幕录制权限，用 dlsym 调 `CGWindowListCreateImage`
+  （`optionIncludingWindow` + `panel.windowNumber`；`boundsIgnoreFraming` 不含阴影），抓出来的图里玻璃背后的内容是空的。
 - 测试面板外观：`ALLUME_SELECT_IDS=… ALLUME_SNAPSHOT=/path.png open build/AllumeCompanion.app`，再 `kill -USR1`，
   面板会渲染成 PNG（`screencapture` 在这里没有屏幕录制权限）。加 `ALLUME_PANEL_MODE=todos|recent` 直接打开那张列表。
 - 导航三件套（README "导航"）：`VisitTrail`（trail.json）由 `BoardModel.onSwitched` 喂；`TodoIndex`（todos.json）在

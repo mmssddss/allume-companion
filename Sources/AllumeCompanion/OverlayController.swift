@@ -34,7 +34,17 @@ final class OverlayController {
     init(state: AppState, runner: CommandRunner) {
         self.state = state
         panel = Self.makePanel(size: Self.panelSize)
-        panel.contentView = NSHostingView(rootView: CommandPanelView(state: state, runner: runner))
+        let host = NSHostingView(rootView: CommandPanelView(state: state, runner: runner))
+        if #available(macOS 26.0, *) {
+            // Liquid Glass from AppKit (NSGlassEffectView), clipped to the rounded rect: see
+            // `roundedClip` for why the clip is needed.
+            let glass = NSGlassEffectView()
+            glass.cornerRadius = PanelMetrics.cornerRadius
+            glass.contentView = host
+            panel.contentView = Self.roundedClip(glass)
+        } else {
+            panel.contentView = host
+        }
         // Esc inside a navigation list goes back to the commands; from the commands it closes.
         panel.onEscape = { [weak self] in
             guard let self else { return }
@@ -55,11 +65,27 @@ final class OverlayController {
                         ctx.duration = PanelMetrics.resizeDuration
                         ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
                         self.panel.animator().setFrame(self.panelFrame(for: w.frame), display: true)
-                    }
+                    } completionHandler: { self.panel.invalidateShadow() }
                 }
                 Log.info("panel height → \(h), frame \(self.panel.frame)")
             }
         }
+    }
+
+    /// Wraps `view` in a layer that clips to the panel's rounded rect. The glass draws its own
+    /// soft shadow past its shape; cut off by the square window edge, it left the corners ~6%
+    /// black, so they showed grey and the window shadow came out square. Clipped, the corners are
+    /// fully transparent and the window shadow follows the rounded shape.
+    private static func roundedClip(_ view: NSView) -> NSView {
+        let clip = NSView()
+        clip.wantsLayer = true
+        clip.layer?.cornerRadius = PanelMetrics.cornerRadius
+        clip.layer?.cornerCurve = .continuous
+        clip.layer?.masksToBounds = true
+        view.frame = clip.bounds
+        view.autoresizingMask = [.width, .height]
+        clip.addSubview(view)
+        return clip
     }
 
     private static func makePanel(size: CGSize) -> OverlayPanel {
@@ -130,6 +156,7 @@ final class OverlayController {
         }
         let t1 = Date()
         panel.makeKeyAndOrderFront(nil)
+        panel.invalidateShadow()
         let t2 = Date()
         NotificationCenter.default.post(name: .panelShown, object: nil)
         Log.info("panel shown at \(panel.frame); setFrame \(Int(t1.timeIntervalSince(t0) * 1000)) ms\(relaid ? " (relaid)" : ""), orderFront \(Int(t2.timeIntervalSince(t1) * 1000)) ms")

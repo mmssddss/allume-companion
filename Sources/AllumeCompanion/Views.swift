@@ -141,11 +141,11 @@ struct CommandPanelView: View {
         NotificationCenter.default.post(name: .panelHeight, object: PanelMetrics.height(forRows: rows.count))
     }
 
-    /// Liquid Glass on macOS 26 (what Spotlight and Allume's own floating panels are made of);
-    /// the regular material with a hairline edge before that.
+    /// On macOS 26 the Liquid Glass is the panel's NSGlassEffectView (OverlayController), so
+    /// nothing here; the regular material with a hairline edge before that.
     @ViewBuilder private var panelBackground: some View {
         if #available(macOS 26.0, *) {
-            Color.clear.glassEffect(.regular, in: RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius))
+            Color.clear
         } else {
             RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius).fill(.regularMaterial)
                 .overlay(RoundedRectangle(cornerRadius: PanelMetrics.cornerRadius).strokeBorder(.quaternary))
