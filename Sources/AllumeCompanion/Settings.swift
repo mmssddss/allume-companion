@@ -22,6 +22,8 @@ final class SettingsModel: ObservableObject {
     @Published var scannedAt: Date?
     @Published var scanning = false
     @Published var thumbnailsCleared = false
+    /// What the last "发一条测试通知" did.
+    @Published var testResult = ""
 
     var rescanTodos: () -> Void = {}
     var sendTestNotification: () -> Void = {}
@@ -163,8 +165,12 @@ struct SettingsView: View {
                 HStack {
                     Text("写法：卡片正文第一行 @todo(due: 2026-10-20) 内容").font(.caption).foregroundStyle(.secondary)
                     Spacer()
-                    Button("发一条测试通知") { model.sendTestNotification() }
+                    Button("发一条测试通知") { model.testResult = ""; model.sendTestNotification() }
                         .disabled(model.notifications == .unavailable)
+                }
+                if !model.testResult.isEmpty {
+                    Text(model.testResult).font(.caption)
+                        .foregroundStyle(model.notifications == .allowed ? Color.secondary : Color.orange)
                 }
             }
 
@@ -213,7 +219,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 480, height: 880)
-        .onDisappear { model.thumbnailsCleared = false }
+        .onDisappear { model.thumbnailsCleared = false; model.testResult = "" }
     }
 
     private func permissionRow(_ name: String, ok: Bool, status: String, button: String, open: @escaping () -> Void) -> some View {

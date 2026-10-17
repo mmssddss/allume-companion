@@ -75,8 +75,10 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   `BoardIndex.onCrawled` 之后扫全部白板（`--filter @todo --kinds text`，CLI 的 filter 接受 `@`，子串匹配所以 `@todo(due: …)` 也命中），
   到期日只认标记行 `@todo(due: YYYY-MM-DD)`，正文里散写的日期不算；当前白板由 `onLoaded` 用模型行
   免费更新；`DueReminders`（reminders.json）用 `UNUserNotificationCenter`，只在 .app 包里可用（裸可执行文件没有 bundle id 会崩，
-  `available` 挡住）。通知权限：用户在系统设置里（而不是首次弹窗里）打开后，macOS 26/27 的 `authorizationStatus` 仍是 1（denied），
-  但 `alertSetting` 是 enabled 且 `add` 成功，所以判断权限要看 `alertSetting`；`schedule` 每次现查，设置里打开后下次扫描就生效。
+  `available` 挡住）。通知权限只看 `authorizationStatus`（`DueReminders.isAllowed`）：实测 `authorizationStatus` 1（denied）而
+  `alertSetting` 2（enabled）时 `add` 照样成功，但 usernoted 日志是 "Presenting … as none"、`notificationsAllowed: false`，
+  什么都不显示（以前误以为这种组合算已允许）。查通知去没去屏幕：`/usr/bin/log stream --predicate 'eventMessage CONTAINS[c] "maverickli"'`
+  （zsh 里 `log` 是内建命令，要写全路径）。`schedule` 每次现查，在系统设置里打开"允许通知"后下次扫描就生效。
   设置窗口"发一条测试通知"直接投一条并记日志（`ALLUME_USR2=test-notification` + `kill -USR2` 同效）。
   提醒开关和时间在 `ReminderSettings`（UserDefaults），触发时刻 = 到期日 + 设置的时分（`TodoIndex` 里的 9 点只是到期日本身）；
   改设置走 `DueReminders.reschedule`（先撤掉所有 `due-` 待发通知再排）。

@@ -365,7 +365,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.todoIndex.refresh(index: self.boardIndex, reason: "settings")
             self.settings.model.refresh()
         }
-        m.sendTestNotification = { [weak self] in self?.reminders.sendTest() }
+        m.sendTestNotification = { [weak self] in
+            self?.reminders.sendTest { [weak self] result in
+                self?.settings.model.testResult = result
+                self?.settings.model.refresh()
+            }
+        }
         m.clearThumbnails = { [weak self] in self?.runner.thumbnails.clearAll() }
         m.remindersChanged = { [weak self] in
             guard let self else { return }
