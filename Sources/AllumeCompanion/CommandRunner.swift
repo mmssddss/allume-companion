@@ -83,6 +83,28 @@ final class CommandRunner {
         return r
     }
 
+    /// How many CLI calls `execAll` keeps in flight. The CLI moves one card per call (no batch
+    /// form), about 0.2 s each: nine cards one after another took 2.4 s and visibly changed one
+    /// by one; six at a time it is two rounds. `open -W`'s occasional "Unable to block" when
+    /// several start at once is retried in `AllumeCLI.run`.
+    static let parallelCalls = 6
+
+    /// Runs independent commands (one per card) a few at a time; true for each that succeeded,
+    /// in the order given.
+    func execAll(_ commands: [[String]]) async -> [Bool] {
+        var ok = [Bool](repeating: false, count: commands.count)
+        for chunk in stride(from: 0, to: commands.count, by: Self.parallelCalls) {
+            let range = chunk..<min(chunk + Self.parallelCalls, commands.count)
+            await withTaskGroup(of: (Int, Bool).self) { group in
+                for i in range {
+                    group.addTask { @MainActor in (i, await self.exec(commands[i]).ok) }
+                }
+                for await (i, success) in group { ok[i] = success }
+            }
+        }
+        return ok
+    }
+
     private func guarded(_ body: () async -> Void) async {
         guard !state.isRunning else { return }
         guard !state.selectedCardIds.isEmpty else { state.appendLog(String(localized: "没有选中的卡片。先按 ⌘K 读取。")); return }
@@ -487,11 +509,8 @@ final class CommandRunner {
         await guarded {
             let name = CommandCatalog.sizes.first { $0.width == width && $0.height == height }?.name
             await frameStep(label: name.map { String(localized: "统一大小：\($0)") } ?? String(localized: "统一尺寸 \(width)×\(height)")) { _ in
-                var any = false
-                for id in state.selectedCardIds {
-                    if await exec(["card-move", "--id", id, "--width", "\(width)", "--height", "\(height)"]).ok { any = true }
-                }
-                return any
+                let results = await execAll(state.selectedCardIds.map { ["card-move", "--id", $0, "--width", "\(width)", "--height", "\(height)"] })
+                return results.contains(true)
             }
         }
     }
@@ -506,8 +525,7 @@ final class CommandRunner {
         defer { state.isRunning = false }
         undoEntry = nil
         state.appendLog(String(localized: "撤销：\(entry.label)"))
-        var failed = 0
-        for cmd in entry.commands where !(await exec(cmd).ok) { failed += 1 }
+        let failed = await execAll(entry.commands).filter { !$0 }.count
         entry.after?()
         state.setStatus(failed == 0 ? String(localized: "已撤销：\(entry.label)") : String(localized: "撤销 \(entry.label)：\(failed)/\(entry.commands.count) 条失败"), error: failed > 0)
         state.appendLog(state.status)

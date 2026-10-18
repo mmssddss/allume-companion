@@ -36,6 +36,8 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   - 编辑文字卡时 `AXFocusedUIElement` 就是那张卡的 `AXTextArea`：正文、屏幕坐标、`AXSelectedTextRange`（光标/选中区间）都有，
     所以"正在改哪张卡"和"笔记里选中的那段字"拿得到；卡片 id 树里没有，要用正文比对 `BoardModel` 或坐标换算回 `frame` 反查。
   - 窗口的 `AXDocument` 读出来是空的，白板文档 id 拿不到；手写笔迹没有。
+- CLI 没有批量移动：`card-move` 一次一张、约 0.2 秒，统一大小和撤销用 `CommandRunner.execAll` 6 条并发（9 张从 2.4 秒到 0.6 秒，
+  串行时卡片是一张张变的）。`card-gather` 本身就是一次多张。
 - CLI 做的移动在 Allume 里 ⌘Z 撤不掉（不经过它的 undo manager），只能 `card-move` 恢复；面板的"撤销"就是这么做的。
   面板不提供删除：Allume 自己的 Delete 键带原生 ⌘Z。
 - `board-content` 只接受完整白板文档 id `<前缀>:<后缀>`，卡片 id 的 scope 前缀不够；`card-content <卡片id> -f json` 的
