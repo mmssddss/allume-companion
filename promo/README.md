@@ -10,6 +10,7 @@ npm run footage   # ../build/masters/*.mov → public/footage/*.mp4 + stills (sr
 npm run music     # src/timeline.json → public/audio/music.wav
 npm run studio    # preview and scrub
 npm run render    # → out/allume-companion-promo.mp4
+python3 -I scripts/make-web-media.py ../../blog/public/projects/allume-companion   # the landing page's videos
 ```
 
 The masters come from the companion's demo recordings (`../docs/DEVELOPMENT.md`, "演示视频"):
