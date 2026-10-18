@@ -13,6 +13,10 @@ BIN="$(swift build -c "$CONFIG" --show-bin-path)/AllumeCompanion"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/AllumeCompanion"
+# Release: drop the debug symbol table. It records the absolute path of every source and object
+# file on the build machine (the developer's home and folder names), which a shipped binary must not
+# carry. Crash reports still name the functions (the exported symbols stay).
+if [[ "$CONFIG" == release ]]; then strip -S -x "$APP/Contents/MacOS/AllumeCompanion"; fi
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 echo -n 'APPL????' > "$APP/Contents/PkgInfo"
 
