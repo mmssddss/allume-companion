@@ -356,6 +356,8 @@ struct CommandPanelView: View {
         .background { panelBackground }
         .onAppear { fieldFocused = true }
         .onReceive(NotificationCenter.default.publisher(for: .panelShown)) { _ in
+            // The last command's result belongs to the last opening, not this one.
+            if !state.status.isEmpty { state.setStatus("") }
             if !query.isEmpty { query = "" }
             if selectedIndex != 0 { selectedIndex = 0 }
             fieldFocused = true
