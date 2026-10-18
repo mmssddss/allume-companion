@@ -16,8 +16,12 @@ import Foundation
 /// still restored, and the cards delivered through `onLateSelection`.
 enum SelectionReader {
     static let cardType = NSPasteboard.PasteboardType("com.allume.copyable.card")
+    /// The item Allume writes after all the card items of one ⌘C.
+    static let selectionType = NSPasteboard.PasteboardType("com.allume.copyable.selection")
     static let timeout: TimeInterval = 0.2
     static let lateWatch: TimeInterval = 1.5
+    /// Longest wait between the first pasteboard change and Allume's last item.
+    static let settle: TimeInterval = 0.15
     /// Cards that arrived after `capture` had already thrown `.timeout` (main actor).
     @MainActor static var onLateSelection: (([Card]) -> Void)?
 
@@ -70,8 +74,20 @@ enum SelectionReader {
             }
             try? await Task.sleep(nanoseconds: 2_000_000)
         }
-        // Allume writes all items in one pasteboard transaction (one changeCount step), so no
-        // settle delay is needed; measured: changeCount moves ~40–70 ms after the ⌘C is posted.
+        // changeCount moves when Allume clears the pasteboard, before it has written the items: a
+        // read right then saw 2 of 9 cards, or none. It writes the card items first and its
+        // `com.allume.copyable.selection` item last, so wait for that one (≤ settle); when no Allume
+        // type shows up at all (a text copy from a card being edited), stop waiting early.
+        let changed = Date()
+        while Date().timeIntervalSince(changed) < settle {
+            let items = pb.pasteboardItems ?? []
+            if items.contains(where: { $0.types.contains(selectionType) }) { break }
+            if Date().timeIntervalSince(changed) > 0.03,
+               !items.contains(where: { $0.types.contains { $0.rawValue.hasPrefix("com.allume.") } }) { break }
+            try? await Task.sleep(nanoseconds: 2_000_000)
+        }
+        let settledMs = Int(Date().timeIntervalSince(changed) * 1000)
+        if settledMs > 5 { Log.info("pasteboard settled \(settledMs) ms after it changed") }
 
         let written = Date()
         let cards = parse(pb)
@@ -95,6 +111,11 @@ enum SelectionReader {
             while pb.changeCount == before {
                 if Date() > deadline { return }
                 try? await Task.sleep(nanoseconds: 20_000_000)
+            }
+            let changed = Date()
+            while Date().timeIntervalSince(changed) < settle,
+                  !(pb.pasteboardItems ?? []).contains(where: { $0.types.contains(selectionType) }) {
+                try? await Task.sleep(nanoseconds: 2_000_000)
             }
             let items = pb.pasteboardItems ?? []
             guard items.contains(where: { $0.types.contains(cardType) }) else {

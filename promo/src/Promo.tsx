@@ -20,8 +20,8 @@ type Feature = {id: string; from: number; kicker: string; lines: string[]; keys:
 // The six simple ones, two bars each. Key times are source seconds of the clip (motion spans).
 const FEATURES: Feature[] = [
   {id: 'arrange', from: 4, kicker: 'Arrange', lines: ['Tidy up any mess', 'in one keystroke.'], keys: [[{k: '⌘K', t: 3.55, key: true}, {k: 'grid 3', t: 4.8}, {k: '⏎', t: 5.92, key: true}]]},
-  {id: 'sameSize', from: 6, kicker: 'Same size', lines: ['Every card,', 'the same size.'], keys: [[{k: '⌘K', t: 2.43, key: true}, {k: 'medium', t: 3.8}, {k: '⏎', t: 4.82, key: true}]]},
-  {id: 'undo', from: 8, kicker: 'Undo', lines: ['Changed your mind?', 'Put them back.'], keys: [[{k: '⌘K', t: 2.42, key: true}, {k: 'undo', t: 3.7}, {k: '⏎', t: 4.77, key: true}]]},
+  {id: 'sameSize', from: 6, kicker: 'Same size', lines: ['Every card,', 'the same size.'], keys: [[{k: '⌘K', t: 2.42, key: true}, {k: 'medium', t: 3.7}, {k: '⏎', t: 4.78, key: true}]]},
+  {id: 'undo', from: 8, kicker: 'Undo', lines: ['Changed your mind?', 'Put them back.'], keys: [[{k: '⌘K', t: 2.47, key: true}, {k: 'undo', t: 3.75}, {k: '⏎', t: 4.82, key: true}]]},
   {id: 'jump', from: 10, kicker: 'Jump', lines: ['Any board,', 'a few letters away.'], keys: [[{k: '⌘K', t: 1.92, key: true}, {k: 'trip', t: 3.22}, {k: '⏎', t: 4.75, key: true}]]},
   {
     id: 'addTodo',
