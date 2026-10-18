@@ -1,7 +1,9 @@
 #!/bin/zsh
 # Turns the screen recording of one feature into what the README and the landing page show
 # (docs/DEVELOPMENT.md "演示视频"):
-#   <name>.mp4 + <name>.webm  the landing page's looping video: 1280 wide, 30 fps, no audio
+#   <name>.mp4 + <name>.webm  the landing page's looping video: 1280 wide, 60 fps, no audio
+#                             (screencapture records variable frame rate, ~55 fps average on a
+#                             120 timebase; static stretches repeat the frame)
 #   <name>.jpg                its poster, the last frame (the result), also shown with reduced motion
 #   <name>.gif                the README's: 800 wide, 12 fps, one palette per clip
 #
@@ -14,7 +16,7 @@ NAME="${2:?name}"
 OUT="${3:-build/demo-media}"
 mkdir -p "$OUT"
 CROP="crop=iw:ih-${CROP_TOP:-0}:0:${CROP_TOP:-0}"
-WEB="$CROP,fps=30,scale=1280:-2:flags=lanczos"
+WEB="$CROP,fps=60,scale=1280:-2:flags=lanczos"
 
 ffmpeg -v error -y -i "$IN" -an -vf "$WEB" -c:v libx264 -crf 24 -preset slow -pix_fmt yuv420p \
   -movflags +faststart "$OUT/$NAME.mp4"

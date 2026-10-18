@@ -481,7 +481,7 @@ Allume 一个人只有一个 workspace，CLI 也建不了新的，所以直接�
    中途重启会打断，下次接着补）。录英文界面加 `--args -AppleLanguages '(en)'`。
 3. 录：`screencapture -v -x -R<Allume 窗口的 x,y,w,h> -V <秒数> <文件>.mov`（要屏幕录制权限；Retina 下录出来是 2 倍像素），
    Allume 窗口固定 1280×800。录之前打开勿扰模式，免得系统通知录进去。
-4. `scripts/make-demo-media.sh <录屏> <名字>`：出 `<名字>.mp4` / `.webm`（网页循环视频，1280 宽 30fps 无声）、`.jpg`（最后一帧，
+4. `scripts/make-demo-media.sh <录屏> <名字>`：出 `<名字>.mp4` / `.webm`（网页循环视频，1280 宽 60fps 无声）、`.jpg`（最后一帧，
    做封面，也给开了减弱动态效果的人看）、`.gif`（README 用，800 宽 12fps）。
 
 分镜（每段 5–10 秒）：排列（框选 Japan Trip 九张 → ⌘K → `grid 4` → ⏎）、撤销（接着 ⌘K → 撤销）、统一大小（⌘K → 统一大小：中）、
