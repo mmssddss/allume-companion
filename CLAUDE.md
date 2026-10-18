@@ -169,6 +169,10 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   `scripts/reset-demo-board.py` 每段开拍前复位（会改 `companion-demo.json`，Companion 要重启）；`build/record-region`
   （`scripts/record-region.swift`，ScreenCaptureKit，ProRes、无指针、约 57fps）录，`scripts/make-demo-media.sh` 转
   mp4 / webm / jpg / gif 和 `MASTER_DIR` 下的恒定 60fps 母版。录完 `ALLUME_DEMO_ROOT` 不设，正常启动。
+- 宣传片在 `promo/`（Remotion 4.0.532 + React 18，`promo/README.md`）：`npm run footage`（`build/masters` → `public/footage`）、
+  `npm run music`（`scripts/make-music.py` 按 `src/timeline.json` 合成配乐）、`npm run render`（约 1.5 分钟）。画面和配乐共用
+  `timeline.json` 的节拍（120 BPM，一小节 120 帧）；`src/clips.json` 是每段用的素材区间。全片不用渐隐，只用位移、缩放、
+  翻转、遮罩推入和矩形形变。`public/footage`、`public/audio`、`out/` 不进 git。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。
 - 图标：`Resources/AppIcon.icon`（Icon Composer 格式）由 build-app.sh 里的 `xcrun actool … --app-icon AppIcon` 编成
   Assets.car + AppIcon.icns。`icon.json` 的 `groups` **第一个在最上层**（和 Icon Composer 界面一致）。想看系统真正渲染的

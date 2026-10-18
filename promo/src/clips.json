@@ -1,0 +1,14 @@
+{
+  "_": "What each scene plays from the footage (public/footage/<file>.mp4, from ../build/masters): source ranges in seconds, played back to back, sped up to fit [playFrom, playTo] bars. Ranges come from the motion spans of each master (panel opening, typing, ⏎, the cards moving); gaps between them are idle waits cut out.",
+  "size": [2600, 1544],
+  "clips": {
+    "arrange":  {"file": "arrange",   "ranges": [[1.7, 7.5]],                           "playFrom": 4.0,  "playTo": 5.85},
+    "sameSize": {"file": "same-size", "ranges": [[2.2, 6.6]],                           "playFrom": 6.0,  "playTo": 7.85},
+    "undo":     {"file": "undo",      "ranges": [[2.2, 6.9]],                           "playFrom": 8.0,  "playTo": 9.85},
+    "jump":     {"file": "jump",      "ranges": [[1.7, 5.8]],                           "playFrom": 10.0, "playTo": 11.85},
+    "addTodo":  {"file": "todos",     "ranges": [[2.7, 8.3]],                           "playFrom": 12.0, "playTo": 13.85},
+    "doneTodo": {"file": "todos",     "ranges": [[10.1, 16.0]],                         "playFrom": 14.0, "playTo": 15.85},
+    "daily":    {"file": "daily",     "ranges": [[2.7, 6.3], [8.4, 12.4]],              "playFrom": 18.25, "playTo": 20.75},
+    "projects": {"file": "projects",  "ranges": [[1.6, 2.2], [2.8, 6.9], [8.3, 9.6]],   "playFrom": 23.0, "playTo": 24.85}
+  }
+}
