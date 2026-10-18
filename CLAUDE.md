@@ -49,7 +49,9 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   （行里影响画面的字段的 SHA-256；相同就不重画。不能哈希整段 JSON：`createdAt` 每次调用都等于调用时间）。`rm -rf` 那个目录即可强制重画。板上没有墨迹数据（只有 `inkStrokeCount`），画不了笔画。
 - `allume open` 换了画布和窗口标题，但 Allume 左上角的面包屑不重画（停在上一块白板的路径）；Allume 里任何一次
   后退/前进（⌘[ / ⌘]，菜单里没有）都会按包含关系重画成正确路径。`open` 每次都压一条历史（同一 id 连开两次就有两条），
-  所以 `openBoard` 连开两次再发 ⌘[：落在第二份上，画面不闪，只多一条指向同一白板的前进项。深链接 `allume://…` 试过几种都不导航。
+  所以 `openBoard` 连开两次再发 ⌘[：落在第二份上，画面不闪，只多一条指向同一白板的前进项。Allume 还没处理完第二次
+  `open` 时 ⌘[ 会退到上一块白板（用户看到的是"跳到了错误的地方"，之后面包屑也乱），所以发完 ⌘[ 盯 0.6 秒窗口标题，
+  变成别的白板就补一个 ⌘]（`stepForwardIfWentTooFar`，日志 `open board: ⌘[ went back to …`）。深链接 `allume://…` 试过几种都不导航。
   测跳转：`ALLUME_USR2=open:<白板文档id> open build/AllumeCompanion.app` 后 `kill -USR2`。
 - 添加待办（`CommandRunner.addTodo`）：卡片无标题，正文一行 `@todo(due: YYYY-MM-DD) 内容`，和 `TodoIndex.context` /
   `dueDate` 读的格式一致；改格式两边一起改。`card-add` 建的文字卡按内容自动定尺寸（约 290×60）；卡片标题画在 `frame`

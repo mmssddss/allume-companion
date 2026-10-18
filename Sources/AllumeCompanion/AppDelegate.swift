@@ -268,7 +268,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     Log.info("panel log:\n" + self.state.log); return
                 }
                 if query.hasPrefix("open:") {
-                    await self.runner.openBoard(id: String(query.dropFirst(5)), title: "test", verify: true)
+                    let id = String(query.dropFirst(5))
+                    await self.runner.openBoard(id: id, title: self.boardIndex.title(of: id) ?? "test", verify: true)
                     Log.info("panel log:\n" + self.state.log); return
                 }
                 if let match = CommandCatalog.matches(for: query).first {

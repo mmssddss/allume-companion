@@ -473,6 +473,16 @@
         }
       }
     },
+    "⌘] → Allume（退过头了，前进回来）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "⌘] → Allume (went back too far, stepping forward)"
+          }
+        }
+      }
+    },
     "⏎ 新建 · Esc 返回" : {
       "localizations" : {
         "en" : {

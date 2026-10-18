@@ -119,7 +119,7 @@ enum SelectionReader {
     /// Allume was activated and left again. A second key-up posted to it did not stop it.
     @discardableResult
     static func postCommand(key: CGKeyCode, to pid: pid_t) -> Bool {
-        guard NSRunningApplication(processIdentifier: pid)?.isActive == true else {
+        guard isFrontmost(pid) else {
             Log.info("not posting ⌘ key \(key): Allume is not the active app")
             return false
         }
@@ -137,11 +137,21 @@ enum SelectionReader {
     @MainActor
     static func waitUntilFrontmost(_ pid: pid_t, timeout: TimeInterval = 1) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
-        while NSRunningApplication(processIdentifier: pid)?.isActive != true {
-            if Date() > deadline { return false }
+        while !isFrontmost(pid) {
+            if Date() > deadline {
+                Log.info("Allume did not come to the front within \(timeout) s (frontmost: \(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "none"))")
+                return false
+            }
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         return true
+    }
+
+    /// Either answer counts: `NSRunningApplication.isActive` on a fresh instance has been seen
+    /// to lag behind the window server right after an activation.
+    static func isFrontmost(_ pid: pid_t) -> Bool {
+        NSWorkspace.shared.frontmostApplication?.processIdentifier == pid
+            || NSRunningApplication(processIdentifier: pid)?.isActive == true
     }
 
     // MARK: - Parse

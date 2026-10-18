@@ -264,14 +264,38 @@ final class CommandRunner {
         guard await exec(["open", id]).ok else { return }
         let again = await exec(["open", id], showStdout: false)
         state.setStatus(String(localized: "已打开「\(title)」"))
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: AllumeTracker.bundleID).first else { return }
+        let bundleID = AllumeTracker.bundleID
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
+                ?? NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleID }) else {
+            Log.info("open board: no running \(bundleID); breadcrumb not refreshed")
+            return
+        }
         app.activate()
-        guard again.ok else { return }
+        guard again.ok else { Log.info("open board: second open failed; breadcrumb not refreshed"); return }
         try? await Task.sleep(for: .milliseconds(150))
         // From a reminder Allume may still be coming to the front; a ⌘[ posted before then would repeat.
         guard await SelectionReader.waitUntilFrontmost(app.processIdentifier) else { return }
         state.appendLog(String(localized: "⌘[ → Allume（让它重画面包屑）"))
         SelectionReader.postCommand(key: 33, to: app.processIdentifier) // kVK_ANSI_LeftBracket
+        await stepForwardIfWentTooFar(to: title, pid: app.processIdentifier)
+    }
+
+    /// ⌘[ should land on the first of the two copies `openBoard` opened: same board, same window
+    /// title. If Allume had not taken the second `open` yet, ⌘[ goes back to the board before
+    /// instead (the user lands on the wrong board, and its breadcrumb then leads astray), so watch
+    /// the title for a moment and step forward again with ⌘] when it changed. A title AX cannot
+    /// read (empty, or just "Allume") proves nothing either way.
+    private func stepForwardIfWentTooFar(to title: String, pid: pid_t) async {
+        let deadline = Date().addingTimeInterval(0.6)
+        while Date() < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+            let now = state.boardTitle
+            if now.isEmpty || now == "Allume" || now == title { continue }
+            Log.info("open board: ⌘[ went back to \"\(now)\" instead of \"\(title)\"; ⌘] to step forward")
+            state.appendLog(String(localized: "⌘] → Allume（退过头了，前进回来）"))
+            SelectionReader.postCommand(key: 30, to: pid) // kVK_ANSI_RightBracket
+            return
+        }
     }
 
     private struct Workspace: Decodable { let title: String?; let rootBoardId: String? }

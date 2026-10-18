@@ -321,10 +321,13 @@ enum CommandCatalog {
             return list.map { CommandMatch(spec: $0, args: args, score: 0, lastWordScore: 0) }
         }
         return specs.compactMap { spec in
-            // Every word must match some alias; the score is the sum of the best per-word scores.
+            // Every word must match some alias, or a word of the title as the UI shows it (so
+            // "all todos" finds All Todos in English, where "all" is no alias); the score is the
+            // sum of the best per-word scores.
+            let pool = spec.aliases + titleWords(spec)
             var total = 0, last = 0
             for w in words {
-                let best = spec.aliases.map { score(word: w, alias: $0) }.max() ?? 0
+                let best = pool.map { score(word: w, alias: $0) }.max() ?? 0
                 if best == 0 { return nil }
                 total += best
                 last = best
@@ -341,6 +344,13 @@ enum CommandCatalog {
     private static func order(_ spec: CommandSpec) -> Int { specs.firstIndex { $0.id == spec.id } ?? 0 }
 
     /// Lowercased words with digits removed (those become args).
+    /// The words of a command's localized title ("Same Size: Medium" → same, size, medium), minus
+    /// connecting words that would match everything; Chinese titles stay one run, like the aliases.
+    private static func titleWords(_ spec: CommandSpec) -> [String] {
+        let skip: Set<String> = ["a", "an", "the", "in", "to", "of", "n"]
+        return normalizedWords(spec.title.replacingOccurrences(of: ":", with: " ")).filter { !skip.contains($0) }
+    }
+
     static func normalizedWords(_ query: String) -> [String] {
         var q = query.lowercased()
         q = q.replacingOccurrences(of: #"\d+"#, with: " ", options: .regularExpression)
