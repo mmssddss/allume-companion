@@ -166,7 +166,9 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   配上面的 `ALLUME_SNAPSHOT` / `ALLUME_SETTINGS_SNAPSHOT`；本机已经开着一份时 `-n` 另起一个，测完按 pid 杀掉自己那个。
 - 演示视频（docs/DEVELOPMENT.md "演示视频"）：`scripts/make-demo-board.py` 建 Demo 白板，`ALLUME_DEMO_ROOT=<id>` 让面板只显示
   Demo 里的白板 / 待办 / 最近去过（`Demo.swift`，日记和项目建在 Demo 上，用 `*-demo.json`，不排提醒）；
-  `screencapture -v -R… -V…` 录（Claude 已有屏幕录制权限），`scripts/make-demo-media.sh` 转 mp4 / webm / jpg / gif。
+  `scripts/reset-demo-board.py` 每段开拍前复位（会改 `companion-demo.json`，Companion 要重启）；`build/record-region`
+  （`scripts/record-region.swift`，ScreenCaptureKit，ProRes、无指针、约 57fps）录，`scripts/make-demo-media.sh` 转
+  mp4 / webm / jpg / gif 和 `MASTER_DIR` 下的恒定 60fps 母版。录完 `ALLUME_DEMO_ROOT` 不设，正常启动。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。
 - 图标：`Resources/AppIcon.icon`（Icon Composer 格式）由 build-app.sh 里的 `xcrun actool … --app-icon AppIcon` 编成
   Assets.car + AppIcon.icns。`icon.json` 的 `groups` **第一个在最上层**（和 Icon Composer 界面一致）。想看系统真正渲染的

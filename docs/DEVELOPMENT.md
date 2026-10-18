@@ -479,12 +479,23 @@ Allume 一个人只有一个 workspace，CLI 也建不了新的，所以直接�
    日记和项目建在 Demo 上（不弹确认框），记在 `companion-demo.json`，访问记在 `trail-demo.json`；不排提醒。
    先用 `ALLUME_USR2="今天"`、`"project:…"` 把日记和项目建好，等日志里 `companion: 2026 filled`（一年约 380 块白板，
    中途重启会打断，下次接着补）。录英文界面加 `--args -AppleLanguages '(en)'`。
-3. 录：`screencapture -v -x -R<Allume 窗口的 x,y,w,h> -V <秒数> <文件>.mov`（要屏幕录制权限；Retina 下录出来是 2 倍像素），
-   Allume 窗口固定 1280×800。录之前打开勿扰模式，免得系统通知录进去。
-4. `scripts/make-demo-media.sh <录屏> <名字>`：出 `<名字>.mp4` / `.webm`（网页循环视频，1280 宽 60fps 无声）、`.jpg`（最后一帧，
-   做封面，也给开了减弱动态效果的人看）、`.gif`（README 用，800 宽 12fps）。
+3. 每段开拍前 `python3 scripts/reset-demo-board.py <清单.json>`（先退出 Companion 或之后重启它：项目在 Todo / Doing / Done
+   的登记在 `companion-demo.json` 里、它在内存里有一份，登记决定面板给哪些命令）：Japan Trip 摆回散开的原位、ryokan 待办
+   恢复成过期、录待办时加的卡删掉、项目都回到 Todo。
+4. 录：`swiftc -O scripts/record-region.swift -o build/record-region`，`build/record-region <x,y,w,h> <秒数> <文件>.mov`
+   （全局坐标、左上原点，用窗口的 CGWindowList bounds）。ScreenCaptureKit 录那块屏幕区域里的一切（面板也在内），Retina 像素，
+   最多 60fps，不带鼠标指针，ProRes 422 HQ（约 58 Mbps，一段 10 秒约 300MB）。画面不变时不出帧，所以是可变帧率，平均约 57fps。
+   `screencapture -v` 也能用，但只有 1–2 Mbps、带指针、不能覆盖已有文件（静默失败，exit 1）。录之前打开勿扰模式。
+5. `CROP_TOP=76 MASTER_DIR=build/masters scripts/make-demo-media.sh <录屏> <名字>`：裁掉标题栏（76px 是 Retina 下的
+   38pt，红绿灯和带 workspace 名的面包屑），出 `<名字>.mp4` / `.webm`（网页循环视频，1280 宽 60fps 无声）、`.jpg`（最后一帧，
+   做封面，也给开了减弱动态效果的人看）、`.gif`（README 用，800 宽 12fps），以及 `build/masters/<名字>.mov`（剪宣传片用的母版：
+   原尺寸、恒定 60fps、ProRes 422 HQ）。`build/` 不进 git，母版和原始录屏只在本机。
 
-分镜（每段 5–10 秒）：排列（框选 Japan Trip 九张 → ⌘K → `grid 4` → ⏎）、撤销（接着 ⌘K → 撤销）、统一大小（⌘K → 统一大小：中）、
+录制时踩过的坑：面板执行完命令不会自己关，要补一个 Esc；在面板之外再按一次 Esc 会被 Allume 当成"回上一级白板"。
+刚用 CLI 挪过卡片后，Allume 的 ⌘C 偶尔只复制出一部分或什么都不给，先框选、⌘C、取消一次再录就好。
+computer use 的截图只拍已授权的 app，看不到面板；面板上发生了什么要看录屏本身（`ffmpeg … tile` 出联系表）。
+
+分镜（每段 9–20 秒）：排列（框选 Japan Trip 九张 → ⌘K → `grid 4` → ⏎）、撤销（接着 ⌘K → 撤销）、统一大小（⌘K → 统一大小：中）、
 跳转（⌘K → `trip` → ⏎）、待办（添加待办 `Pay rent fri` → Tab → ⏎；全部待办里 ⌘⏎ 完成一条）、日记（今天 → 本月）、
 项目（选中 project-Japan trip → 移到 Doing）。录完 Demo 可以整块删掉（`allume delete <Demo 的卡片 id>`），
 `companion-demo.json` / `trail-demo.json` 一起删。

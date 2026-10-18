@@ -7,7 +7,11 @@
 #   <name>.jpg                its poster, the last frame (the result), also shown with reduced motion
 #   <name>.gif                the README's: 800 wide, 12 fps, one palette per clip
 #
-# Usage: [CROP_TOP=<px>] scripts/make-demo-media.sh <recording.mov> <name> [out dir, default build/demo-media]
+#   $MASTER_DIR/<name>.mov    with MASTER_DIR set: the editing master, full Retina size,
+#                             constant 60 fps, ProRes 422 HQ (for the promo film)
+#
+# Usage: [CROP_TOP=<px>] [MASTER_DIR=<dir>] scripts/make-demo-media.sh <recording.mov> <name> [out dir, default build/demo-media]
+# Recordings come from build/record-region (scripts/record-region.swift) or screencapture -v.
 #   CROP_TOP cuts that many pixels off the top first: Allume's title bar (traffic lights,
 #   breadcrumb with the workspace's name) is 76 px in a Retina recording of the window.
 set -euo pipefail
@@ -25,5 +29,12 @@ ffmpeg -v error -y -i "$IN" -an -vf "$WEB" -c:v libvpx-vp9 -crf 36 -b:v 0 -row-m
 ffmpeg -v error -y -i "$IN" -vf "$CROP,scale=1280:-2:flags=lanczos" -update 1 -q:v 3 "$OUT/$NAME.jpg"
 ffmpeg -v error -y -i "$IN" -vf "$CROP,fps=12,scale=800:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=128:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
   "$OUT/$NAME.gif"
+
+if [[ -n "${MASTER_DIR:-}" ]]; then
+  mkdir -p "$MASTER_DIR"
+  ffmpeg -v error -y -i "$IN" -an -vf "$CROP,fps=60" -c:v prores_ks -profile:v 3 -pix_fmt yuv422p10le \
+    "$MASTER_DIR/$NAME.mov"
+  ls -lh "$MASTER_DIR/$NAME.mov" | awk '{print $5, $NF}'
+fi
 
 ls -lh "$OUT/$NAME".{mp4,webm,jpg,gif} | awk '{print $5, $NF}'
