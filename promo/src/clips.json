@@ -1,14 +1,209 @@
 {
-  "_": "What each scene plays from the footage (public/footage/<file>.mp4, from ../build/masters): source ranges in seconds, played back to back, sped up to fit [playFrom, playTo] bars. Ranges come from the motion spans of each master (panel opening, typing, ⏎, the cards moving); gaps between them are idle waits cut out.",
-  "size": [2600, 1544],
+  "_": "What each scene plays from the footage (public/footage/<file>.mp4, from ../build/masters): source ranges in seconds, played back to back over [playFrom, playTo] bars. Each range keeps one motion (the panel opening, the typing, ⏎ through to the result) plus a short dwell; the still waits between them are dropped, which shows no seam because nothing moves in them. Played at real speed (projects a little faster), so every result is on screen well before the cut.",
+  "size": [
+    2600,
+    1544
+  ],
   "clips": {
-    "arrange":  {"file": "arrange",   "ranges": [[1.7, 7.5]],                           "playFrom": 4.0,  "playTo": 5.85},
-    "sameSize": {"file": "same-size", "ranges": [[2.2, 6.6]],                           "playFrom": 6.0,  "playTo": 7.85},
-    "undo":     {"file": "undo",      "ranges": [[2.2, 6.9]],                           "playFrom": 8.0,  "playTo": 9.85},
-    "jump":     {"file": "jump",      "ranges": [[1.7, 5.8]],                           "playFrom": 10.0, "playTo": 11.85},
-    "addTodo":  {"file": "todos",     "ranges": [[2.7, 8.3]],                           "playFrom": 12.0, "playTo": 13.85},
-    "doneTodo": {"file": "todos",     "ranges": [[10.1, 16.0]],                         "playFrom": 14.0, "playTo": 15.85},
-    "daily":    {"file": "daily",     "ranges": [[2.7, 6.3], [8.4, 12.4]],              "playFrom": 18.25, "playTo": 20.75},
-    "projects": {"file": "projects",  "ranges": [[1.6, 2.2], [2.8, 6.9], [8.3, 9.6]],   "playFrom": 23.0, "playTo": 24.85}
+    "arrange": {
+      "file": "arrange",
+      "ranges": [
+        [
+          1.75,
+          2.7
+        ],
+        [
+          3.5,
+          4.05
+        ],
+        [
+          4.75,
+          5.25
+        ],
+        [
+          5.85,
+          7.5
+        ]
+      ],
+      "playFrom": 3.6,
+      "playTo": 5.425
+    },
+    "sameSize": {
+      "file": "same-size",
+      "ranges": [
+        [
+          2.3,
+          2.95
+        ],
+        [
+          3.75,
+          4.25
+        ],
+        [
+          4.75,
+          4.95
+        ],
+        [
+          5.9,
+          7.2
+        ]
+      ],
+      "playFrom": 6.05,
+      "playTo": 7.375
+    },
+    "undo": {
+      "file": "undo",
+      "ranges": [
+        [
+          2.3,
+          2.9
+        ],
+        [
+          3.65,
+          4.15
+        ],
+        [
+          4.7,
+          4.9
+        ],
+        [
+          5.85,
+          7.4
+        ]
+      ],
+      "playFrom": 8.05,
+      "playTo": 9.475
+    },
+    "jump": {
+      "file": "jump",
+      "ranges": [
+        [
+          1.8,
+          2.4
+        ],
+        [
+          3.15,
+          3.7
+        ],
+        [
+          4.7,
+          6.2
+        ]
+      ],
+      "playFrom": 10.05,
+      "playTo": 11.375
+    },
+    "addTodo": {
+      "file": "todos",
+      "ranges": [
+        [
+          2.8,
+          3.35
+        ],
+        [
+          3.9,
+          4.35
+        ],
+        [
+          5.0,
+          5.3
+        ],
+        [
+          6.0,
+          6.9
+        ],
+        [
+          7.7,
+          8.9
+        ]
+      ],
+      "playFrom": 12.05,
+      "playTo": 13.75
+    },
+    "doneTodo": {
+      "file": "todos",
+      "ranges": [
+        [
+          10.2,
+          10.75
+        ],
+        [
+          11.35,
+          11.8
+        ],
+        [
+          12.25,
+          12.9
+        ],
+        [
+          14.6,
+          15.4
+        ],
+        [
+          16.4,
+          17.6
+        ]
+      ],
+      "playFrom": 14.05,
+      "playTo": 15.875
+    },
+    "daily": {
+      "file": "daily",
+      "ranges": [
+        [
+          2.8,
+          3.35
+        ],
+        [
+          3.9,
+          4.4
+        ],
+        [
+          5.0,
+          6.6
+        ],
+        [
+          8.5,
+          9.1
+        ],
+        [
+          9.55,
+          10.0
+        ],
+        [
+          10.75,
+          12.6
+        ]
+      ],
+      "playFrom": 18.2,
+      "playTo": 20.975
+    },
+    "projects": {
+      "file": "projects",
+      "ranges": [
+        [
+          1.7,
+          2.3
+        ],
+        [
+          2.9,
+          3.4
+        ],
+        [
+          4.1,
+          4.6
+        ],
+        [
+          5.25,
+          7.1
+        ],
+        [
+          8.35,
+          9.6
+        ]
+      ],
+      "playFrom": 23.0,
+      "playTo": 24.895
+    }
   }
 }
