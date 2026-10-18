@@ -162,6 +162,9 @@ macOS 菜单栏 app，⌘K 时从 Allume 窗口顶部弹出的命令面板，所
   英文日期输入靠 `NSDataDetector`：`tomorrow` `Friday` `in 3 days` `Oct 20` `10-20` 能认，`next week` `end of month` 不认，
   `next tuesday` 算成下下周二（所以提示文案不用它）。测英文：`open -n build/AllumeCompanion.app --args -AppleLanguages '(en)'`，
   配上面的 `ALLUME_SNAPSHOT` / `ALLUME_SETTINGS_SNAPSHOT`；本机已经开着一份时 `-n` 另起一个，测完按 pid 杀掉自己那个。
+- 演示视频（docs/DEVELOPMENT.md "演示视频"）：`scripts/make-demo-board.py` 建 Demo 白板，`ALLUME_DEMO_ROOT=<id>` 让面板只显示
+  Demo 里的白板 / 待办 / 最近去过（`Demo.swift`，日记和项目建在 Demo 上，用 `*-demo.json`，不排提醒）；
+  `screencapture -v -R… -V…` 录（Claude 已有屏幕录制权限），`scripts/make-demo-media.sh` 转 mp4 / webm / jpg / gif。
 - 无 Xcode 工程；SwiftPM + 手写 Info.plist 足够。Swift 6.3 编译器、语言模式 5。
 - 图标：`Resources/AppIcon.icon`（Icon Composer 格式）由 build-app.sh 里的 `xcrun actool … --app-icon AppIcon` 编成
   Assets.car + AppIcon.icns。`icon.json` 的 `groups` **第一个在最上层**（和 Icon Composer 界面一致）。想看系统真正渲染的

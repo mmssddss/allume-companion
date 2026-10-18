@@ -281,6 +281,10 @@ final class CommandRunner {
     /// `BoardIndex` wins (else the first).
     func goHome() async {
         state.requestHidePanel?()
+        if let demo = Demo.root {
+            await openBoard(id: demo, title: boardModel?.index.title(of: demo) ?? "Demo")
+            return
+        }
         let r = await exec(["list-workspaces", "--format", "json"], showStdout: false)
         guard r.ok else { return }
         let roots = ((try? JSONDecoder().decode([Workspace].self, from: Data(r.stdout.utf8))) ?? [])

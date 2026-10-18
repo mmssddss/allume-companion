@@ -12,7 +12,7 @@ final class VisitTrail {
         var at: Date
     }
 
-    static let fileURL = BoardIndex.fileURL.deletingLastPathComponent().appendingPathComponent("trail.json")
+    static let fileURL = BoardIndex.fileURL.deletingLastPathComponent().appendingPathComponent(Demo.file("trail"))
     static let maxVisits = 200
 
     private(set) var visits: [Visit] = []

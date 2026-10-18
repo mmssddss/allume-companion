@@ -185,7 +185,7 @@ struct CompanionRegistry: Codable {
 
 @MainActor
 final class CompanionStore {
-    static let fileURL = BoardIndex.fileURL.deletingLastPathComponent().appendingPathComponent("companion.json")
+    static let fileURL = BoardIndex.fileURL.deletingLastPathComponent().appendingPathComponent(Demo.file("companion"))
 
     private var registries: [String: CompanionRegistry] = [:]
     /// The workspace the companion last worked in (looked up once a launch).
@@ -261,6 +261,10 @@ extension CommandRunner {
     /// else the first), cached for the launch.
     private func companionWorkspace() async -> (id: String, root: String)? {
         if let w = companion.workspace { return w }
+        if let demo = Demo.root, let ws = await firstWorkspaceId() {
+            companion.workspace = (id: ws, root: demo)
+            return companion.workspace
+        }
         let r = await exec(["list-workspaces", "--format", "json"], showStdout: false)
         guard r.ok else { return nil }
         let all = ((try? JSONDecoder().decode([WorkspaceRow].self, from: Data(r.stdout.utf8))) ?? [])
@@ -274,6 +278,13 @@ extension CommandRunner {
         }
         companion.workspace = w
         return w
+    }
+
+    /// Demo mode: the workspace the demo board is in (for `board-create -w`); the demo board
+    /// itself stands in for its root.
+    private func firstWorkspaceId() async -> String? {
+        let r = await exec(["list-workspaces", "--format", "json"], showStdout: false)
+        return ((try? JSONDecoder().decode([WorkspaceRow].self, from: Data(r.stdout.utf8))) ?? []).first?.id
     }
 
     /// A new board titled `title`, mounted on `parent` at `slot`; returns the new card's row.
@@ -310,7 +321,8 @@ extension CommandRunner {
         guard let onRoot = await rows(of: ws.root, subBoardsOnly: true) else { return nil }
         let rootThere = reg.root.map { known in onRoot.contains { $0.document?.id == known } } ?? false
             || onRoot.contains { $0.kind == "subBoard" && ($0.document?.title ?? $0.title) == CompanionLayout.rootTitle }
-        if !rootThere, !Self.confirmCreatingRoot() {
+        // Demo mode (Demo.swift): the demo board was made for this, no need to ask.
+        if !rootThere, !Demo.isOn, !Self.confirmCreatingRoot() {
             state.setStatus(String(localized: "没有建 workspace-Companion，日记和项目要用到它"))
             return nil
         }

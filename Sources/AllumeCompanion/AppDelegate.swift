@@ -28,6 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Log.trim()
+        if let demo = Demo.root { Log.info("demo mode: only \(demo) and below; companion-demo.json, trail-demo.json, no reminders") }
         ReminderSettings.registerDefaults()
         CompanionSettings.registerDefaults()
         applySetup(AllumeSetup.detect())
@@ -49,7 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         todoIndex = TodoIndex()
         reminders = DueReminders()
         refreshRecent(excluding: nil)
-        state.todos = todoIndex.sorted
+        state.todos = visibleTodos
         runner.todoIndex = todoIndex
         state.boards = boardIndex.refs
         boardModel.onSwitched = { [weak self] id, title in
@@ -69,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         todoIndex.onChanged = { [weak self] in
             guard let self else { return }
-            self.state.todos = self.todoIndex.sorted
+            self.state.todos = self.visibleTodos
             self.reminders.schedule(self.todoIndex.items)
         }
         let afterCrawl = boardIndex.onCrawled
@@ -78,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             self.state.boards = self.boardIndex.refs
             self.refreshRecent(excluding: self.boardModel.boardId)
+            if Demo.isOn { self.state.todos = self.visibleTodos }   // its filter follows the parent links
             self.todoIndex.refresh(index: self.boardIndex, reason: "index crawled")
         }
         boardIndex.onChanged = { [weak self] gone in
@@ -293,11 +295,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     }
 
+    /// 全部待办 as the panel lists it: in demo mode only the todos on the demo board and below.
+    private var visibleTodos: [TodoItem] {
+        guard let demo = Demo.root else { return todoIndex.sorted }
+        return todoIndex.sorted.filter { boardIndex.isUnder($0.boardId, root: demo) }
+    }
+
     /// "最近去过" as the index has it: without boards it no longer has (deleted), under the
     /// title it has now (renamed). Everything as recorded until the first crawl.
     private func refreshRecent(excluding current: String?) {
         let titles = Dictionary(boardIndex.entries.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
-        state.recentBoards = trail.recent(excluding: current) { titles.isEmpty || titles[$0] != nil }
+        let demo = Demo.root
+        state.recentBoards = trail.recent(excluding: current) { id in
+            (titles.isEmpty || titles[id] != nil) && (demo.map { self.boardIndex.isUnder(id, root: $0) } ?? true)
+        }
             .map { v in titles[v.boardId].map { VisitTrail.Visit(boardId: v.boardId, title: $0, at: v.at) } ?? v }
     }
 

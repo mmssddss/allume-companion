@@ -466,6 +466,29 @@ frame 怎么读：`allume board-content <白板文档id> --format json` 一次�
 - 快照通常要一次 `board-content`（约 150–350ms）；白板模型 2 秒内刷新过就省掉这次（见"当前白板模型"）。
   面板日志只显示命令行和"已记录 N/M 张"，不显示 JSON。
 
+## 演示视频
+
+README 的 GIF 和落地页（companion.maverickli.org）的循环视频，每个功能一段，在一块专门的 Demo 白板上录。
+Allume 一个人只有一个 workspace，CLI 也建不了新的，所以直接录会把真实的白板名和待办录进去；演示模式把面板
+限制在 Demo 白板里：
+
+1. `python3 scripts/make-demo-board.py <清单.json>`：在 workspace 首页所有卡片的右边建「Demo」，里面是 Japan Trip（九张
+   大小不一、散开的笔记，用来录排列 / 统一大小 / 撤销）、Trip Ideas（含一条过期待办）、Home Renovation（今天、两天后、
+   没日期的待办）、Reading Notes、Recipes；到期日从运行那天算。打印 Demo 的白板 id，清单里记着建了什么。
+2. 用 `ALLUME_DEMO_ROOT=<Demo 的 id>` 启动（`Demo.swift`）：白板搜索、最近去过、全部待办只列 Demo 及以下；回首页回到 Demo；
+   日记和项目建在 Demo 上（不弹确认框），记在 `companion-demo.json`，访问记在 `trail-demo.json`；不排提醒。
+   先用 `ALLUME_USR2="今天"`、`"project:…"` 把日记和项目建好，等日志里 `companion: 2026 filled`（一年约 380 块白板，
+   中途重启会打断，下次接着补）。录英文界面加 `--args -AppleLanguages '(en)'`。
+3. 录：`screencapture -v -x -R<Allume 窗口的 x,y,w,h> -V <秒数> <文件>.mov`（要屏幕录制权限；Retina 下录出来是 2 倍像素），
+   Allume 窗口固定 1280×800。录之前打开勿扰模式，免得系统通知录进去。
+4. `scripts/make-demo-media.sh <录屏> <名字>`：出 `<名字>.mp4` / `.webm`（网页循环视频，1280 宽 30fps 无声）、`.jpg`（最后一帧，
+   做封面，也给开了减弱动态效果的人看）、`.gif`（README 用，800 宽 12fps）。
+
+分镜（每段 5–10 秒）：排列（框选 Japan Trip 九张 → ⌘K → `grid 4` → ⏎）、撤销（接着 ⌘K → 撤销）、统一大小（⌘K → 统一大小：中）、
+跳转（⌘K → `trip` → ⏎）、待办（添加待办 `Pay rent fri` → Tab → ⏎；全部待办里 ⌘⏎ 完成一条）、日记（今天 → 本月）、
+项目（选中 project-Japan trip → 移到 Doing）。录完 Demo 可以整块删掉（`allume delete <Demo 的卡片 id>`），
+`companion-demo.json` / `trail-demo.json` 一起删。
+
 ## 脆弱点
 
 - **剪贴板格式是 Allume 私有的**，`com.allume.copyable.card` 的类型名和 JSON 字段都没有文档，升级可能变。

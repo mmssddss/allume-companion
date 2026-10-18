@@ -99,7 +99,7 @@ final class DueReminders: NSObject, UNUserNotificationCenterDelegate {
 
     /// Reconciles pending notifications with the current todo list.
     func schedule(_ todos: [TodoItem]) {
-        guard Self.available else { return }
+        guard Self.available, !Demo.isOn else { return }
         guard ReminderSettings.enabled else { removeAllPending(); return }
         let center = UNUserNotificationCenter.current()
         // Asked live, so flipping the switch in 系统设置 takes effect at the next scan, no relaunch.

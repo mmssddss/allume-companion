@@ -69,15 +69,29 @@ final class BoardIndex {
 
     func parentId(of id: String) -> String? { entries.first { $0.id == id }?.parentId }
 
+    /// Whether `id` is `root` or a board below it, by the parent links the crawl recorded.
+    func isUnder(_ id: String, root: String) -> Bool {
+        let byId = Dictionary(entries.map { ($0.id, $0.parentId) }, uniquingKeysWith: { a, _ in a })
+        var next: String? = id
+        var seen = Set<String>()
+        while let cur = next, seen.insert(cur).inserted {
+            if cur == root { return true }
+            next = byId[cur] ?? nil
+        }
+        return false
+    }
+
     /// Every board with the titles of the boards above it (root first), for the panel's search.
+    /// In demo mode only the demo board and what is below it, with paths starting there.
     var refs: [BoardRef] {
         let byId = Dictionary(entries.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        return entries.map { e in
+        let shown = Demo.root.map { root in entries.filter { isUnder($0.id, root: root) } } ?? entries
+        return shown.map { e in
             var path: [String] = []
-            var up = e.parentId
+            var up = e.id == Demo.root ? nil : e.parentId
             while let id = up, let p = byId[id], path.count < 6 {
                 path.insert(p.title.isEmpty ? String(localized: "（无标题）") : p.title, at: 0)
-                up = p.parentId
+                up = id == Demo.root ? nil : p.parentId
             }
             return BoardRef(id: e.id, title: e.title, path: path.joined(separator: " › "), lastSeen: e.lastSeen)
         }
